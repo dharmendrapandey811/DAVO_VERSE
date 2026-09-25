@@ -21,13 +21,14 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
-LIMBO_IMAGE_URL = "https://img.freepik.com/free-vector/rocket-launch-concept-illustration_114360-1011.jpg"
+# Nayi Limbo Rocket Image URL
+LIMBO_IMAGE_URL = "https://i.postimg.cc/m2mYv63Z/1000449482.png"
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=False)
 
 USER_BALANCES = {}
 USER_UPI_IDS = {}        # Saved UPI IDs {user_id: "upi@id"}
-USER_WAITING_STATE = {}   # To track if waiting for UPI input or Amount input
+USER_WAITING_STATE = {}   # State tracker to prevent message conflicts
 PVP_MATCHES = {}
 PENDING_WITHDRAWALS = {}
 
@@ -57,7 +58,7 @@ def is_bot_active(message_or_call):
 
 def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
     if len(args) < 1:
-        return None, None, "⚠️ Amount aur Round/Target mention karein!"
+        return None, None, "⚠️ Amount aur Target/Round mention karein!"
 
     balance = get_balance(user_id)
     val1 = args[0].lower()
@@ -96,7 +97,7 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
                     target_num = int(p2)
                     amount = int(p1) if p1.is_integer() else p1
         except Exception:
-            return None, None, f"❌ Valid Target/Rounds Range: {min_num} - {max_num}"
+            return None, None, f"❌ Valid Range: {min_num} - {max_num}"
 
     if amount is None or amount <= 0:
         return None, None, "❌ Invalid Amount!"
@@ -144,7 +145,54 @@ def parse_amount_and_choice(args, user_id, valid_choices=None):
     return amount, choice, None
 
 # -------------------------------------------------------------
-# DEPOSIT (WITH SCREENSHOT) & BUTTON-BASED WITHDRAWAL
+# START & ADMIN COMMANDS
+# -------------------------------------------------------------
+@bot.message_handler(commands=['start'])
+def send_start(message):
+    try:
+        user_id = message.from_user.id
+        user_name = message.from_user.full_name
+
+        if user_id == ADMIN_ID:
+            markup = InlineKeyboardMarkup()
+            btn_status = InlineKeyboardButton("🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", callback_data="admin_toggle_bot")
+            markup.add(btn_status)
+            bot.reply_to(message, f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\nStatus: {'🟢 ACTIVE' if BOT_ACTIVE else '🔴 STOPPED'}\n\n• <code>/addbal user_id amount</code>", reply_markup=markup)
+        else:
+            if not is_bot_active(message): return
+            bot.reply_to(message, f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n🎮 Games list dekhne ke liye <code>/games</code> type karein.")
+    except Exception as e:
+        logging.error(f"Start Error: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data == "admin_toggle_bot")
+def handle_admin_toggle(call):
+    global BOT_ACTIVE
+    try:
+        if call.from_user.id != ADMIN_ID: return
+        BOT_ACTIVE = not BOT_ACTIVE
+        status_text = "🟢 ACTIVE" if BOT_ACTIVE else "🔴 STOPPED"
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", callback_data="admin_toggle_bot"))
+        bot.edit_message_text(f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\nStatus: {status_text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+    except Exception as e:
+        logging.error(f"Toggle Error: {e}")
+
+@bot.message_handler(commands=['addbal'])
+def admin_add_balance(message):
+    if message.from_user.id != ADMIN_ID: return
+    try:
+        args = message.text.split()
+        target_id, amount = int(args[1]), float(args[2])
+        USER_BALANCES[target_id] = get_balance(target_id) + amount
+        bot.reply_to(message, f"✅ Added ₹{amount:.2f} to <code>{target_id}</code>")
+        try:
+            bot.send_message(target_id, f"🎉 <b>₹{amount:.2f} credited to your wallet!</b>\n💳 Current Balance: ₹{get_balance(target_id):.2f}")
+        except Exception: pass
+    except Exception:
+        bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
+
+# -------------------------------------------------------------
+# DEPOSIT & WITHDRAWAL
 # -------------------------------------------------------------
 @bot.message_handler(commands=['deposit', 'dep'])
 def cmd_deposit(message):
@@ -184,30 +232,6 @@ def cmd_deposit(message):
     except Exception as e:
         logging.error(f"Deposit Error: {e}")
 
-# SCREENSHOT HANDLER
-@bot.message_handler(content_types=['photo'])
-def handle_payment_screenshot(message):
-    try:
-        if message.chat.type != "private": return
-        user_id = message.from_user.id
-        user_name = message.from_user.full_name
-
-        bot.reply_to(message, "✅ <b>Payment Screenshot Received!</b>\n\nAdmin ko verify karne ke liye bhej diya gaya hai. Kuch hi minutes me balance add ho jayega.")
-        
-        caption = (
-            f"📸 <b>NEW DEPOSIT SCREENSHOT!</b>\n\n"
-            f"👤 <b>User:</b> {user_name} (@{message.from_user.username or 'NoUsername'})\n"
-            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
-            f"<b>Quick Add Balance:</b>\n"
-            f"<code>/addbal {user_id} AMOUNT</code>"
-        )
-
-        bot.send_photo(ADMIN_ID, photo=message.photo[-1].file_id, caption=caption)
-
-    except Exception as e:
-        logging.error(f"Screenshot Error: {e}")
-
-# --- NEW BUTTON-BASED WITHDRAWAL MENU ---
 @bot.message_handler(commands=['withdraw', 'wd'])
 def cmd_withdraw_menu(message):
     try:
@@ -266,76 +290,6 @@ def handle_withdrawal_buttons(call):
     except Exception as e:
         logging.error(f"WD Button Error: {e}")
 
-# TEXT INPUT HANDLER FOR UPI & WITHDRAWAL AMOUNT
-@bot.message_handler(func=lambda message: message.from_user.id in USER_WAITING_STATE)
-def handle_user_input_states(message):
-    try:
-        user_id = message.from_user.id
-        state = USER_WAITING_STATE.get(user_id)
-
-        if state == "WAITING_FOR_UPI":
-            upi_input = message.text.strip()
-            if "@" not in upi_input or len(upi_input) < 5:
-                bot.reply_to(message, "❌ Valid UPI ID enter karein! (e.g. <code>9876543210@paytm</code>)")
-                return
-
-            USER_UPI_IDS[user_id] = upi_input
-            del USER_WAITING_STATE[user_id]
-
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("💸 Withdraw Money Now", callback_data="wd_process_req"))
-            bot.reply_to(message, f"✅ <b>UPI ID Saved Successfully!</b>\n\n📍 UPI ID: <code>{upi_input}</code>", reply_markup=markup)
-
-        elif state == "WAITING_FOR_WD_AMOUNT":
-            try:
-                amount = float(message.text.strip())
-            except ValueError:
-                bot.reply_to(message, "❌ Kripya numeric amount type karein (e.g., 500)!")
-                return
-
-            balance = get_balance(user_id)
-            if amount < 50:
-                bot.reply_to(message, "❌ Minimum withdrawal ₹50 hai!")
-                return
-            if balance < amount:
-                bot.reply_to(message, f"❌ Insufficient Balance! Aapka balance ₹{balance:.2f} hai.")
-                return
-
-            upi_details = USER_UPI_IDS.get(user_id)
-            USER_BALANCES[user_id] -= amount
-            del USER_WAITING_STATE[user_id]
-
-            wd_id = f"wd_{user_id}_{int(time.time())}"
-            PENDING_WITHDRAWALS[wd_id] = {
-                "user_id": user_id,
-                "user_name": message.from_user.full_name,
-                "amount": amount,
-                "upi": upi_details
-            }
-
-            # Reply to User
-            bot.reply_to(message, f"✅ <b>Withdrawal Request Submitted!</b>\n\n💰 Amount: ₹{amount:.2f}\n📍 UPI: <code>{upi_details}</code>\n⏳ Status: Pending Admin Approval")
-
-            # Alert Admin
-            markup = InlineKeyboardMarkup()
-            markup.add(
-                InlineKeyboardButton("✅ Approve", callback_data=f"wd_app_{wd_id}"),
-                InlineKeyboardButton("❌ Reject & Refund", callback_data=f"wd_rej_{wd_id}")
-            )
-
-            bot.send_message(
-                ADMIN_ID,
-                f"🚨 <b>NEW WITHDRAWAL REQUEST!</b>\n\n"
-                f"👤 <b>User:</b> {message.from_user.full_name} (<code>{user_id}</code>)\n"
-                f"💰 <b>Amount:</b> ₹{amount:.2f}\n"
-                f"📍 <b>UPI/Details:</b> <code>{upi_details}</code>\n"
-                f"🆔 <b>Request ID:</b> <code>{wd_id}</code>",
-                reply_markup=markup
-            )
-
-    except Exception as e:
-        logging.error(f"Input State Error: {e}")
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("wd_app_") or call.data.startswith("wd_rej_"))
 def handle_withdrawal_approval(call):
     try:
@@ -367,37 +321,98 @@ def handle_withdrawal_approval(call):
         logging.error(f"WD Approval Error: {e}")
 
 # -------------------------------------------------------------
-# START & ADMIN COMMANDS
+# COMBINED INPUT HANDLER (NO HANDLER CONFLICT)
 # -------------------------------------------------------------
-@bot.message_handler(commands=['start'])
-def send_start(message):
+@bot.message_handler(content_types=['text', 'photo'])
+def handle_text_and_photos(message):
     try:
         user_id = message.from_user.id
-        user_name = message.from_user.full_name
 
-        if user_id == ADMIN_ID:
-            markup = InlineKeyboardMarkup()
-            btn_status = InlineKeyboardButton("🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", callback_data="admin_toggle_bot")
-            markup.add(btn_status)
-            bot.reply_to(message, f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\nStatus: {'🟢 ACTIVE' if BOT_ACTIVE else '🔴 STOPPED'}\n\n• <code>/addbal user_id amount</code>", reply_markup=markup)
-        else:
-            if not is_bot_active(message): return
-            bot.reply_to(message, f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n🎮 Games list dekhne ke liye <code>/games</code> type karein.")
-    except Exception as e:
-        logging.error(f"Start Error: {e}")
+        # 1. State Input Handling (For UPI or Withdrawal Amount)
+        if user_id in USER_WAITING_STATE:
+            state = USER_WAITING_STATE.get(user_id)
 
-@bot.callback_query_handler(func=lambda call: call.data == "admin_toggle_bot")
-def handle_admin_toggle(call):
-    global BOT_ACTIVE
-    try:
-        if call.from_user.id != ADMIN_ID: return
-        BOT_ACTIVE = not BOT_ACTIVE
-        status_text = "🟢 ACTIVE" if BOT_ACTIVE else "🔴 STOPPED"
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", callback_data="admin_toggle_bot"))
-        bot.edit_message_text(f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\nStatus: {status_text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+            if message.content_type != 'text':
+                bot.reply_to(message, "❌ Kripya text message me details bhejein!")
+                return
+
+            if state == "WAITING_FOR_UPI":
+                upi_input = message.text.strip()
+                if "@" not in upi_input or len(upi_input) < 5:
+                    bot.reply_to(message, "❌ Valid UPI ID enter karein! (e.g. <code>9876543210@paytm</code>)")
+                    return
+
+                USER_UPI_IDS[user_id] = upi_input
+                del USER_WAITING_STATE[user_id]
+
+                markup = InlineKeyboardMarkup()
+                markup.add(InlineKeyboardButton("💸 Withdraw Money Now", callback_data="wd_process_req"))
+                bot.reply_to(message, f"✅ <b>UPI ID Saved Successfully!</b>\n\n📍 UPI ID: <code>{upi_input}</code>", reply_markup=markup)
+                return
+
+            elif state == "WAITING_FOR_WD_AMOUNT":
+                try:
+                    amount = float(message.text.strip())
+                except ValueError:
+                    bot.reply_to(message, "❌ Kripya numeric amount type karein (e.g., 500)!")
+                    return
+
+                balance = get_balance(user_id)
+                if amount < 50:
+                    bot.reply_to(message, "❌ Minimum withdrawal ₹50 hai!")
+                    return
+                if balance < amount:
+                    bot.reply_to(message, f"❌ Insufficient Balance! Aapka balance ₹{balance:.2f} hai.")
+                    return
+
+                upi_details = USER_UPI_IDS.get(user_id)
+                USER_BALANCES[user_id] -= amount
+                del USER_WAITING_STATE[user_id]
+
+                wd_id = f"wd_{user_id}_{int(time.time())}"
+                PENDING_WITHDRAWALS[wd_id] = {
+                    "user_id": user_id,
+                    "user_name": message.from_user.full_name,
+                    "amount": amount,
+                    "upi": upi_details
+                }
+
+                bot.reply_to(message, f"✅ <b>Withdrawal Request Submitted!</b>\n\n💰 Amount: ₹{amount:.2f}\n📍 UPI: <code>{upi_details}</code>\n⏳ Status: Pending Admin Approval")
+
+                markup = InlineKeyboardMarkup()
+                markup.add(
+                    InlineKeyboardButton("✅ Approve", callback_data=f"wd_app_{wd_id}"),
+                    InlineKeyboardButton("❌ Reject & Refund", callback_data=f"wd_rej_{wd_id}")
+                )
+
+                bot.send_message(
+                    ADMIN_ID,
+                    f"🚨 <b>NEW WITHDRAWAL REQUEST!</b>\n\n"
+                    f"👤 <b>User:</b> {message.from_user.full_name} (<code>{user_id}</code>)\n"
+                    f"💰 <b>Amount:</b> ₹{amount:.2f}\n"
+                    f"📍 <b>UPI/Details:</b> <code>{upi_details}</code>\n"
+                    f"🆔 <b>Request ID:</b> <code>{wd_id}</code>",
+                    reply_markup=markup
+                )
+                return
+
+        # 2. Payment Screenshot Handler
+        if message.content_type == 'photo' and message.chat.type == 'private':
+            user_name = message.from_user.full_name
+            bot.reply_to(message, "✅ <b>Payment Screenshot Received!</b>\n\nAdmin ko verify karne ke liye bhej diya gaya hai. Kuch hi minutes me balance add ho jayega.")
+            
+            caption = (
+                f"📸 <b>NEW DEPOSIT SCREENSHOT!</b>\n\n"
+                f"👤 <b>User:</b> {user_name} (@{message.from_user.username or 'NoUsername'})\n"
+                f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
+                f"<b>Quick Add Balance:</b>\n"
+                f"<code>/addbal {user_id} AMOUNT</code>"
+            )
+            bot.send_photo(ADMIN_ID, photo=message.photo[-1].file_id, caption=caption)
+            return
+
     except Exception as e:
-        logging.error(f"Toggle Error: {e}")
+        logging.error(f"Combined Handler Error: {e}")
 
 # -------------------------------------------------------------
 # SOLO GAMES (/dr, /limbo, /slots)
@@ -700,20 +715,6 @@ def check_wallet(message):
     if not is_bot_active(message): return
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
-
-@bot.message_handler(commands=['addbal'])
-def admin_add_balance(message):
-    if message.from_user.id != ADMIN_ID: return
-    try:
-        args = message.text.split()
-        target_id, amount = int(args[1]), float(args[2])
-        USER_BALANCES[target_id] = get_balance(target_id) + amount
-        bot.reply_to(message, f"✅ Added ₹{amount:.2f} to <code>{target_id}</code>")
-        try:
-            bot.send_message(target_id, f"🎉 <b>₹{amount:.2f} credited to your wallet!</b>\n💳 Current Balance: ₹{get_balance(target_id):.2f}")
-        except Exception: pass
-    except Exception:
-        bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
 # -------------------------------------------------------------
 # KEEP ALIVE SERVER & LOOP
