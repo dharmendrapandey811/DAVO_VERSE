@@ -9,7 +9,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAH_5paOID8O83VpF6sgoXas8qfQ97TwhnQ"
+BOT_TOKEN = "8728557922:AAHH_9UDQngNFHoa9tfjr1g47-M4n0CEzP8"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
