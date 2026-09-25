@@ -9,21 +9,22 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAEJgnb_6gJEryp1x6bcy6ihB8MyvFlxUIw"
+BOT_TOKEN = "8728557922:AAHojtC0v0uZnauNlqV-R608DDKyRzOzIe4"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
 
 MIN_BET = 10.0
-MAX_BET = 300.0
+MAX_BET = 1000.0  # Max limit set to 1000
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=4)
 
 USER_BALANCES = {}
 USER_UPI = {}
 
-# Active PvP Lobby Sessions
+# Active PvP Lobby Sessions & Escrow Deals
 PVP_MATCHES = {}
+ESCROW_DEALS = {}
 
 # Bot Start/Stop Status Flag
 BOT_ACTIVE = True
@@ -76,6 +77,7 @@ def send_start(message):
             message,
             f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n"
             f"🎮 Type <code>/games</code> to view games list.\n"
+            f"🤝 Type <code>/escrow amount</code> to create secure escrow.\n"
             f"💳 Type <code>/setupi your_upi@upi</code> to set UPI.\n"
             f"📤 Type <code>/withdraw amount</code> to withdraw money.\n"
             f"💸 Reply to any message with <code>/tip amount</code> to send money!"
@@ -109,6 +111,162 @@ def handle_admin_toggle(call):
     bot.answer_callback_query(call.id, f"Bot Status Changed to: {status_text}")
 
 # -------------------------------------------------------------
+# ESCROW SYSTEM
+# -------------------------------------------------------------
+@bot.message_handler(commands=['escrow'])
+def cmd_escrow(message):
+    if not is_bot_active(message): return
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 2:
+        bot.reply_to(message, "⚠️ Format: <code>/escrow amount</code>\nExample: <code>/escrow 100</code>")
+        return
+
+    try:
+        amount = float(args[1])
+
+        if amount < MIN_BET or amount > MAX_BET:
+            bot.reply_to(message, f"❌ Escrow amount must be between ₹{MIN_BET:.0f} and ₹{MAX_BET:.0f}!")
+            return
+
+        if get_balance(user_id) < amount:
+            bot.reply_to(message, "❌ <b>Insufficient Balance!</b>\nEscrow create karne ke liye aapke wallet me utna balance hona zaroori hai.")
+            return
+
+        # Deduct & Hold in Escrow
+        USER_BALANCES[user_id] -= amount
+        escrow_id = f"escrow_{user_id}_{int(time.time())}"
+
+        ESCROW_DEALS[escrow_id] = {
+            "creator_id": user_id,
+            "creator_name": message.from_user.first_name,
+            "provider_id": None,
+            "provider_name": None,
+            "amount": amount,
+            "status": "WAITING"
+        }
+
+        markup = InlineKeyboardMarkup()
+        btn_accept = InlineKeyboardButton("🤝 Accept Deal", callback_data=f"esc_accept_{escrow_id}")
+        btn_cancel = InlineKeyboardButton("❌ Cancel & Refund", callback_data=f"esc_cancel_{escrow_id}")
+        markup.add(btn_accept, btn_cancel)
+
+        bot.reply_to(
+            message,
+            f"🛡️ <b>SECURE ESCROW DEAL CREATED</b>\n\n"
+            f"👤 <b>Creator:</b> {message.from_user.first_name}\n"
+            f"💰 <b>Hold Amount:</b> ₹{amount:.2f}\n"
+            f"📌 <b>Status:</b> Waiting for Provider to accept...\n\n"
+            f"<i>Provider 'Accept Deal' par click karein. Deal complete hone par Creator funds Release karega.</i>",
+            reply_markup=markup
+        )
+
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid Amount!")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("esc_"))
+def handle_escrow_callbacks(call):
+    if not is_bot_active(call): return
+    data = call.data.split("_")
+    action = data[1]
+    escrow_id = "_".join(data[2:])
+    user_id = call.from_user.id
+
+    if escrow_id not in ESCROW_DEALS:
+        bot.answer_callback_query(call.id, "❌ Escrow Deal Expired or Invalid!", show_alert=True)
+        return
+
+    deal = ESCROW_DEALS[escrow_id]
+
+    # ACCEPT DEAL
+    if action == "accept":
+        if user_id == deal["creator_id"]:
+            bot.answer_callback_query(call.id, "❌ Aap apni khud ki deal accept nahi kar sakte!", show_alert=True)
+            return
+
+        if deal["status"] != "WAITING":
+            bot.answer_callback_query(call.id, "❌ Deal is already accepted or finished!", show_alert=True)
+            return
+
+        deal["provider_id"] = user_id
+        deal["provider_name"] = call.from_user.first_name
+        deal["status"] = "ACCEPTED"
+
+        markup = InlineKeyboardMarkup()
+        btn_release = InlineKeyboardButton("✅ Release Funds", callback_data=f"esc_release_{escrow_id}")
+        btn_cancel = InlineKeyboardButton("❌ Cancel & Refund", callback_data=f"esc_cancel_{escrow_id}")
+        markup.add(btn_release, btn_cancel)
+
+        bot.edit_message_text(
+            f"🛡️ <b>ESCROW DEAL IN PROGRESS</b>\n\n"
+            f"👤 <b>Creator:</b> {deal['creator_name']}\n"
+            f"👤 <b>Provider:</b> {deal['provider_name']}\n"
+            f"💰 <b>Hold Amount:</b> ₹{deal['amount']:.2f}\n"
+            f"📌 <b>Status:</b> Accepted & In Progress!\n\n"
+            f"<i>{deal['creator_name']}, kaam/tip milne ke baad 'Release Funds' dabayein.</i>",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id, "✅ You have accepted the deal!")
+
+    # RELEASE FUNDS
+    elif action == "release":
+        if user_id != deal["creator_id"]:
+            bot.answer_callback_query(call.id, "❌ Sirf Creator funds release kar sakta hai!", show_alert=True)
+            return
+
+        if deal["status"] != "ACCEPTED":
+            bot.answer_callback_query(call.id, "❌ Pehle deal accept hone dein!", show_alert=True)
+            return
+
+        provider_id = deal["provider_id"]
+        amount = deal["amount"]
+
+        USER_BALANCES[provider_id] = get_balance(provider_id) + amount
+        deal["status"] = "COMPLETED"
+
+        bot.edit_message_text(
+            f"🎉 <b>ESCROW COMPLETED & RELEASED!</b>\n\n"
+            f"👤 <b>From:</b> {deal['creator_name']}\n"
+            f"👤 <b>To:</b> {deal['provider_name']}\n"
+            f"💰 <b>Amount Transferred:</b> ₹{amount:.2f}\n\n"
+            f"✅ Funds successfully transferred to {deal['provider_name']}'s wallet!",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+
+        try:
+            bot.send_message(provider_id, f"🎉 <b>ESCROW PAYMENT RECEIVED!</b>\n💰 ₹{amount:.2f} has been added to your wallet by {deal['creator_name']}!")
+        except Exception: pass
+
+        del ESCROW_DEALS[escrow_id]
+
+    # CANCEL & REFUND
+    elif action == "cancel":
+        if user_id != deal["creator_id"] and user_id != ADMIN_ID:
+            bot.answer_callback_query(call.id, "❌ Sirf Creator ya Admin cancel kar sakta hai!", show_alert=True)
+            return
+
+        amount = deal["amount"]
+        creator_id = deal["creator_id"]
+
+        USER_BALANCES[creator_id] = get_balance(creator_id) + amount
+        deal["status"] = "CANCELLED"
+
+        bot.edit_message_text(
+            f"❌ <b>ESCROW CANCELLED & REFUNDED!</b>\n\n"
+            f"👤 <b>Creator:</b> {deal['creator_name']}\n"
+            f"💰 <b>Refunded Amount:</b> ₹{amount:.2f}\n\n"
+            f"💸 Amount back in {deal['creator_name']}'s wallet.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+
+        del ESCROW_DEALS[escrow_id]
+
+# -------------------------------------------------------------
 # GAMES MENU & WALLET
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
@@ -125,7 +283,8 @@ def send_games_list(message):
         f"🎯 <b>PvP Dart Duel:</b> <code>/dart amount rounds</code>\n"
         f"⚡ <b>Dice Rush (vs Bot):</b> <code>/dr amount high/low/even/odd</code>\n"
         f"🚀 <b>Limbo (vs Bot):</b> <code>/limbo amount target_x</code>\n"
-        f"🏰 <b>Tower (vs Bot):</b> <code>/tower amount</code>"
+        f"🏰 <b>Tower (vs Bot):</b> <code>/tower amount</code>\n\n"
+        f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code>"
     )
 
     if chat_type == 'private':
@@ -238,7 +397,7 @@ def cmd_tip(message):
         return
 
     if get_balance(sender_id) < amount:
-        bot.reply_to(message, "❌ Insufficient balance!")
+        bot.reply_to(message, "❌ <b>Insufficient balance!</b>")
         return
 
     USER_BALANCES[sender_id] -= amount
@@ -338,7 +497,7 @@ def cmd_withdraw(message):
             return
 
         if get_balance(user_id) < amount:
-            bot.reply_to(message, "❌ Insufficient balance for withdrawal!")
+            bot.reply_to(message, "❌ <b>Insufficient balance for withdrawal!</b>")
             return
 
         USER_BALANCES[user_id] -= amount
@@ -420,12 +579,12 @@ def create_pvp_game(message, game_type, emoji):
         bet_amount = float(args[1])
         rounds = int(args[2])
 
-        if bet_amount < MIN_BET or rounds < 1 or rounds > 5:
-            bot.reply_to(message, "❌ Minimum Bet ₹10 and Rounds must be 1 to 5!")
+        if bet_amount < MIN_BET or bet_amount > MAX_BET or rounds < 1 or rounds > 5:
+            bot.reply_to(message, f"❌ Bet must be between ₹{MIN_BET:.0f} & ₹{MAX_BET:.0f}, Rounds 1 to 5!")
             return
 
         if get_balance(user_id) < bet_amount:
-            bot.reply_to(message, "❌ Insufficient Balance!")
+            bot.reply_to(message, "❌ <b>Insufficient Balance!</b>")
             return
 
         match_id = f"{user_id}_{int(time.time())}"
@@ -515,7 +674,7 @@ def handle_pvp_callbacks(call):
             return
 
         if get_balance(user_id) < match["bet"]:
-            bot.answer_callback_query(call.id, "❌ Balance kam hai!", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ Insufficient Balance!", show_alert=True)
             return
 
         if get_balance(match["p1"]) < match["bet"]:
@@ -641,7 +800,7 @@ def cmd_dr(message):
 
     try:
         bet_amount, bet_type = float(args[1]), args[2].lower()
-        if bet_amount < MIN_BET or get_balance(user_id) < bet_amount:
+        if bet_amount < MIN_BET or bet_amount > MAX_BET or get_balance(user_id) < bet_amount:
             bot.reply_to(message, "❌ Invalid Bet or Low Balance!")
             return
 
@@ -671,7 +830,7 @@ def cmd_limbo(message):
     try:
         bet_amount = float(args[1])
         target_x = float(args[2].lower().replace("x", ""))
-        if bet_amount < MIN_BET or get_balance(user_id) < bet_amount:
+        if bet_amount < MIN_BET or bet_amount > MAX_BET or get_balance(user_id) < bet_amount:
             bot.reply_to(message, "❌ Low Balance!")
             return
 
@@ -697,7 +856,7 @@ def cmd_tower(message):
 
     try:
         bet_amount = float(args[1])
-        if bet_amount < MIN_BET or get_balance(user_id) < bet_amount:
+        if bet_amount < MIN_BET or bet_amount > MAX_BET or get_balance(user_id) < bet_amount:
             bot.reply_to(message, "❌ Low Balance!")
             return
 
