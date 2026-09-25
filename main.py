@@ -25,7 +25,7 @@ MAX_BET = 10000.0
 # Limbo Rocket Image URL
 LIMBO_IMAGE_URL = "https://i.postimg.cc/m2mYv63Z/1000449482.png"
 
-# Startup par purane connections clear karne ke liye
+# Startup par purane connections aur webhooks clear karne ke liye
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=5)
     logging.info("Cleaned pending webhooks successfully.")
@@ -329,14 +329,13 @@ def handle_withdrawal_approval(call):
         logging.error(f"WD Approval Error: {e}")
 
 # -------------------------------------------------------------
-# COMBINED INPUT HANDLER (NO HANDLER CONFLICT)
+# COMBINED INPUT HANDLER
 # -------------------------------------------------------------
 @bot.message_handler(content_types=['text', 'photo'])
 def handle_text_and_photos(message):
     try:
         user_id = message.from_user.id
 
-        # 1. State Input Handling (For UPI or Withdrawal Amount)
         if user_id in USER_WAITING_STATE:
             state = USER_WAITING_STATE.get(user_id)
 
@@ -404,7 +403,6 @@ def handle_text_and_photos(message):
                 )
                 return
 
-        # 2. Payment Screenshot Handler
         if message.content_type == 'photo' and message.chat.type == 'private':
             user_name = message.from_user.full_name
             bot.reply_to(message, "✅ <b>Payment Screenshot Received!</b>\n\nAdmin ko verify karne ke liye bhej diya gaya hai. Kuch hi minutes me balance add ho jayega.")
@@ -725,11 +723,12 @@ def check_wallet(message):
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
 
 # -------------------------------------------------------------
-# KEEP ALIVE SERVER (FIXES RENDER HEAD 501 ERROR)
+# KEEP ALIVE SERVER & BOT STARTUP (FIXED FOR RENDER)
 # -------------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"DAVO CASINO BOT ONLINE")
 
@@ -740,16 +739,22 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    print(f"🌐 Web Server Running on Port {port}")
     server.serve_forever()
 
-if __name__ == "__main__":
-    threading.Thread(target=run_web_server, daemon=True).start()
-    print("⚡ BOT STARTED!")
-    
-    # Render par duplicate polling conflict se bachne ke liye safe loop
+def start_polling():
+    print("⚡ Starting Telegram Bot Polling...")
     while True:
         try:
-            bot.polling(none_stop=True, interval=2, timeout=30)
+            bot.polling(none_stop=True, interval=1, timeout=30)
         except Exception as e:
-            logging.error(f"Polling Exception handled: {e}")
-            time.sleep(5)
+            logging.error(f"Polling Crashed: {e}")
+            time.sleep(3)
+
+if __name__ == "__main__":
+    # Bot Polling ko Background Thread me chala rahe hain
+    bot_thread = threading.Thread(target=start_polling, daemon=True)
+    bot_thread.start()
+    
+    # Main Thread par Web Server chalega taaki Render ise Active rakhe
+    run_web_server()
