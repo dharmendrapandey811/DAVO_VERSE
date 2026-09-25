@@ -3,8 +3,12 @@ import telebot
 import random
 import time
 import threading
+import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+# Logging setup for debugging errors
+logging.basicConfig(level=logging.INFO)
 
 # -------------------------------------------------------------
 # CONFIGURATION
@@ -15,7 +19,7 @@ UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
 
 MIN_BET = 10.0
-MAX_BET = 1000.0  # Max limit set to 1000
+MAX_BET = 1000.0
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=4)
 
@@ -50,40 +54,42 @@ def is_bot_active(message_or_call):
 # -------------------------------------------------------------
 @bot.message_handler(commands=['start'])
 def send_start(message):
-    user_id = message.from_user.id
-    user_name = message.from_user.full_name
+    try:
+        user_id = message.from_user.id
+        user_name = message.from_user.full_name
 
-    if user_id == ADMIN_ID:
-        markup = InlineKeyboardMarkup()
-        btn_status = InlineKeyboardButton(
-            "🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", 
-            callback_data="admin_toggle_bot"
-        )
-        markup.add(btn_status)
+        if user_id == ADMIN_ID:
+            markup = InlineKeyboardMarkup()
+            btn_status = InlineKeyboardButton(
+                "🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", 
+                callback_data="admin_toggle_bot"
+            )
+            markup.add(btn_status)
 
-        bot.reply_to(
-            message,
-            f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\n"
-            f"<b>Current Bot Status:</b> {'🟢 ACTIVE' if BOT_ACTIVE else '🔴 STOPPED (Maintenance)'}\n\n"
-            f"<b>Admin Commands:</b>\n"
-            f"• <code>/addbal user_id amount</code> — Add Balance\n"
-            f"• <code>/cutbal user_id amount reason</code> — Deduct Balance\n\n"
-            f"<i>Niche button se aap Bot ko Start/Stop kar sakte hain:</i>",
-            reply_markup=markup
-        )
-    else:
-        if not is_bot_active(message): return
-        bot.reply_to(
-            message,
-            f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n"
-            f"🎮 Type <code>/games</code> to view games list.\n"
-            f"🤝 Type <code>/escrow amount</code> to create secure escrow.\n"
-            f"💳 Type <code>/setupi your_upi@upi</code> to set UPI.\n"
-            f"📤 Type <code>/withdraw amount</code> to withdraw money.\n"
-            f"💸 Reply to any message with <code>/tip amount</code> to send money!"
-        )
+            bot.reply_to(
+                message,
+                f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\n"
+                f"<b>Current Bot Status:</b> {'🟢 ACTIVE' if BOT_ACTIVE else '🔴 STOPPED (Maintenance)'}\n\n"
+                f"<b>Admin Commands:</b>\n"
+                f"• <code>/addbal user_id amount</code> — Add Balance\n"
+                f"• <code>/cutbal user_id amount reason</code> — Deduct Balance\n\n"
+                f"<i>Niche button se aap Bot ko Start/Stop kar sakte hain:</i>",
+                reply_markup=markup
+            )
+        else:
+            if not is_bot_active(message): return
+            bot.reply_to(
+                message,
+                f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n"
+                f"🎮 Type <code>/games</code> to view games list.\n"
+                f"🛡️ Type <code>/escrow amount</code> to create secure escrow.\n"
+                f"💳 Type <code>/setupi your_upi@upi</code> to set UPI.\n"
+                f"📤 Type <code>/withdraw amount</code> to withdraw money.\n"
+                f"💸 Reply to any message with <code>/tip amount</code> to send money!"
+            )
+    except Exception as e:
+        logging.error(f"Error in start: {e}")
 
-# Callback to toggle bot Start/Stop
 @bot.callback_query_handler(func=lambda call: call.data == "admin_toggle_bot")
 def handle_admin_toggle(call):
     global BOT_ACTIVE
@@ -134,7 +140,6 @@ def cmd_escrow(message):
             bot.reply_to(message, "❌ <b>Insufficient Balance!</b>\nEscrow create karne ke liye aapke wallet me utna balance hona zaroori hai.")
             return
 
-        # Deduct & Hold in Escrow
         USER_BALANCES[user_id] -= amount
         escrow_id = f"escrow_{user_id}_{int(time.time())}"
 
@@ -179,7 +184,6 @@ def handle_escrow_callbacks(call):
 
     deal = ESCROW_DEALS[escrow_id]
 
-    # ACCEPT DEAL
     if action == "accept":
         if user_id == deal["creator_id"]:
             bot.answer_callback_query(call.id, "❌ Aap apni khud ki deal accept nahi kar sakte!", show_alert=True)
@@ -211,7 +215,6 @@ def handle_escrow_callbacks(call):
         )
         bot.answer_callback_query(call.id, "✅ You have accepted the deal!")
 
-    # RELEASE FUNDS
     elif action == "release":
         if user_id != deal["creator_id"]:
             bot.answer_callback_query(call.id, "❌ Sirf Creator funds release kar sakta hai!", show_alert=True)
@@ -243,7 +246,6 @@ def handle_escrow_callbacks(call):
 
         del ESCROW_DEALS[escrow_id]
 
-    # CANCEL & REFUND
     elif action == "cancel":
         if user_id != deal["creator_id"] and user_id != ADMIN_ID:
             bot.answer_callback_query(call.id, "❌ Sirf Creator ya Admin cancel kar sakta hai!", show_alert=True)
@@ -878,7 +880,7 @@ def cmd_tower(message):
     except Exception: pass
 
 # -------------------------------------------------------------
-# DUMMY WEB SERVER FOR HOSTING
+# DUMMY WEB SERVER FOR HOSTING (RENDER ALIVE)
 # -------------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -892,9 +894,16 @@ def run_web_server():
     server.serve_forever()
 
 # -------------------------------------------------------------
-# START BOT ENGINE
+# LIFETIME AUTO-RESTART ENGINE
 # -------------------------------------------------------------
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     print("⚡ DAVO CASINO FAST ENGINE ONLINE!")
-    bot.infinity_polling(skip_pending=True)
+    
+    # Lifetime Loop: Network ya Telegram error aane par bot auto-restart hoga
+    while True:
+        try:
+            bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+        except Exception as e:
+            logging.error(f"Bot Polling Crashed: {e}. Auto-restarting in 3 seconds...")
+            time.sleep(3)
