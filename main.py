@@ -46,7 +46,8 @@ def send_start(message):
             message,
             f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n"
             f"🎮 Type <code>/games</code> to view all games.\n"
-            f"💳 Type <code>/deposit</code> or <code>/withdraw</code> for payments."
+            f"💳 Type <code>/deposit</code> or <code>/withdraw</code> for payments.\n"
+            f"💸 Type <code>/tip user_id amount</code> to send money to another user."
         )
 
 # ADMIN BALANCE ADD
@@ -102,6 +103,7 @@ def send_games_list(message):
         f"6️⃣ <b>Limbo:</b> <code>/limbo amount target_x</code>\n\n"
         f"💳 <b>Deposit:</b> <code>/deposit</code>\n"
         f"📤 <b>Withdraw:</b> <code>/withdraw amount upi</code>\n"
+        f"💸 <b>Tip:</b> <code>/tip user_id amount</code>\n"
         f"📌 <b>Wallet:</b> <code>/wallet</code>"
     )
     bot.reply_to(message, games_text)
@@ -110,6 +112,60 @@ def send_games_list(message):
 def check_wallet(message):
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>{BOT_NAME} WALLET</b>\n🆔 ID: <code>{user_id}</code>\n💰 Balance: ₹{get_balance(user_id):.2f}")
+
+# -------------------------------------------------------------
+# TIP / TRANSFER SYSTEM
+# -------------------------------------------------------------
+@bot.message_handler(commands=['tip'])
+def cmd_tip(message):
+    sender_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 3:
+        bot.reply_to(message, "⚠️ Format: <code>/tip user_id amount</code>\nExample: <code>/tip 123456789 50</code>")
+        return
+
+    try:
+        receiver_id = int(args[1])
+        amount = float(args[2])
+
+        if receiver_id == sender_id:
+            bot.reply_to(message, "❌ Aap khud ko tip nahi bhej sakte!")
+            return
+
+        if amount < 1.0:
+            bot.reply_to(message, "❌ Minimum tip amount ₹1.00 hai.")
+            return
+
+        if get_balance(sender_id) < amount:
+            bot.reply_to(message, "❌ Insufficient balance for tip!")
+            return
+
+        # Transfer process
+        USER_BALANCES[sender_id] -= amount
+        USER_BALANCES[receiver_id] = get_balance(receiver_id) + amount
+
+        bot.reply_to(
+            message,
+            f"💸 <b>TIP SENT SUCCESSFULLY!</b>\n\n"
+            f"👤 Sent To: <code>{receiver_id}</code>\n"
+            f"💰 Amount: ₹{amount:.2f}\n"
+            f"💳 Remaining Bal: ₹{USER_BALANCES[sender_id]:.2f}"
+        )
+
+        try:
+            bot.send_message(
+                receiver_id,
+                f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
+                f"👤 From: {message.from_user.full_name} (<code>{sender_id}</code>)\n"
+                f"💰 Amount: ₹{amount:.2f}\n"
+                f"💳 New Bal: ₹{USER_BALANCES[receiver_id]:.2f}"
+            )
+        except Exception:
+            pass
+
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid User ID or Amount!")
 
 # -------------------------------------------------------------
 # DEPOSIT & WITHDRAW HANDLERS
