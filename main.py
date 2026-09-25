@@ -23,10 +23,10 @@ USER_BALANCES = {}
 USER_UPI = {}
 
 # Active duel sessions
-ACTIVE_HB_GAMES = {}
 ACTIVE_DICE_GAMES = {}
 ACTIVE_BOWL_GAMES = {}
 ACTIVE_BB_GAMES = {}
+ACTIVE_DART_GAMES = {}
 
 def get_balance(user_id):
     if user_id not in USER_BALANCES:
@@ -61,21 +61,32 @@ def send_start(message):
 
 @bot.message_handler(commands=['games', 'help'])
 def send_games_list(message):
+    chat_type = message.chat.type  # 'private', 'group', or 'supergroup'
+    
+    # Base Games List (Group me itna hi dikhega)
     games_text = (
         f"🎰 <b>{BOT_NAME} — ALL GAMES</b> 🎰\n\n"
-        f"👑 <b>Host Battle:</b> <code>/hb amount</code>\n"
+        f"🏦 <b>Host Battle:</b> <code>/hb amount</code>\n"
         f"🎲 <b>PvP Dice Duel:</b> <code>/dice amount rounds</code>\n"
         f"🎳 <b>Bowling Duel:</b> <code>/bowl amount rounds</code>\n"
         f"🏀 <b>Basketball Duel:</b> <code>/basketball amount rounds</code>\n"
+        f"🎯 <b>Dart Duel:</b> <code>/dart amount rounds</code>\n"
         f"⚡ <b>Dice Rush:</b> <code>/dr amount high/low/even/odd</code>\n"
         f"🚀 <b>Limbo:</b> <code>/limbo amount target_x</code>\n"
-        f"🏰 <b>Tower:</b> <code>/tower amount</code>\n\n"
-        f"💳 <b>Deposit:</b> <code>/deposit</code>\n"
-        f"⚙️ <b>Set UPI:</b> <code>/setupi upi_id</code>\n"
-        f"📤 <b>Withdraw:</b> <code>/withdraw amount</code>\n"
-        f"💸 <b>Tip:</b> Reply with <code>/tip amount</code>\n"
-        f"📌 <b>Wallet:</b> <code>/wallet</code>"
+        f"🏰 <b>Tower:</b> <code>/tower amount</code>"
     )
+
+    # Private Bot PM me wallet / deposit / withdraw dikhega
+    if chat_type == 'private':
+        games_text += (
+            f"\n\n"
+            f"💳 <b>Deposit:</b> <code>/deposit</code>\n"
+            f"⚙️ <b>Set UPI:</b> <code>/setupi upi_id</code>\n"
+            f"📤 <b>Withdraw:</b> <code>/withdraw amount</code>\n"
+            f"💸 <b>Tip:</b> Reply with <code>/tip amount</code>\n"
+            f"📌 <b>Wallet:</b> <code>/wallet</code>"
+        )
+
     bot.reply_to(message, games_text)
 
 @bot.message_handler(commands=['wallet', 'balance', 'bal'])
@@ -324,53 +335,17 @@ def handle_withdraw_callback(call):
         except Exception: pass
 
 # -------------------------------------------------------------
-# 1. HOST BATTLE (/hb)
+# 1. BOT FUND DISPLAY (/hb)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['hb'])
 def cmd_hb(message):
-    user_id = message.from_user.id
-    args = message.text.split()
-
-    if len(args) < 2:
-        bot.reply_to(
-            message, 
-            "🤖 <b>BOT FUND</b>\n"
-            "🏦 Balance: $1,031.74\n"
-            "✅ Active — Bets Allowed!\n"
-            "💎 Davo Verse\n\n"
-            "⚠️ Format: <code>/hb amount</code>\n"
-            "Example: <code>/hb 50</code>"
-        )
-        return
-
-    try:
-        bet_amount = float(args[1])
-
-        if bet_amount < MIN_BET:
-            bot.reply_to(message, f"❌ Minimum Bet is ₹{MIN_BET:.2f}")
-            return
-
-        if get_balance(user_id) < bet_amount:
-            bot.reply_to(message, "❌ Insufficient Balance!")
-            return
-
-        USER_BALANCES[user_id] -= bet_amount
-
-        bot.reply_to(
-            message,
-            f"🤖 <b>BOT FUND</b>\n"
-            f"🏦 Balance: $1,031.74\n"
-            f"✅ Active — Bets Allowed!\n"
-            f"💎 Davo Verse\n\n"
-            f"🎲 <b>HOST BATTLE STARTED!</b>\n"
-            f"💰 Bet Amount: ₹{bet_amount:.2f}\n\n"
-            f"👉 <b>Host Turn! Send/Roll a Dice 🎲 now!</b>"
-        )
-
-        ACTIVE_HB_GAMES[user_id] = {"bet": bet_amount, "chat_id": message.chat.id}
-
-    except ValueError:
-        bot.reply_to(message, "❌ Invalid Amount!")
+    bot.reply_to(
+        message, 
+        "🤖 <b>BOT FUND STATUS</b>\n\n"
+        "🏦 <b>Balance:</b> $1,031.74\n"
+        "✅ <b>Status:</b> Active — Bets Allowed!\n"
+        "💎 <b>Network:</b> Davo Verse"
+    )
 
 # -------------------------------------------------------------
 # 2. PVP DICE DUEL (/dice)
@@ -508,41 +483,59 @@ def cmd_basketball(message):
         bot.reply_to(message, "❌ Invalid Bet or Rounds!")
 
 # -------------------------------------------------------------
-# INTERACTIVE GAME HANDLER FOR ALL ROLL EMOJIS
+# 5. DART DUEL (/dart or /darts)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['dart', 'darts'])
+def cmd_dart(message):
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 3:
+        bot.reply_to(message, "⚠️ Format: <code>/dart amount rounds</code>\nExample: <code>/dart 50 3</code>")
+        return
+
+    try:
+        bet_amount = float(args[1])
+        rounds = int(args[2])
+
+        if bet_amount < MIN_BET or rounds < 1 or rounds > 5:
+            bot.reply_to(message, "❌ Minimum Bet ₹10 and Rounds must be 1 to 5!")
+            return
+
+        if get_balance(user_id) < bet_amount:
+            bot.reply_to(message, "❌ Insufficient Balance!")
+            return
+
+        USER_BALANCES[user_id] -= bet_amount
+
+        bot.reply_to(
+            message,
+            f"🎯 <b>DART BATTLE STARTED!</b>\n"
+            f"💰 Bet Amount: ₹{bet_amount:.2f}\n"
+            f"🔄 Total Rounds: {rounds}\n\n"
+            f"👉 <b>YOUR TURN! Send {rounds} Dart 🎯 emoji now!</b>"
+        )
+
+        ACTIVE_DART_GAMES[user_id] = {
+            "bet": bet_amount,
+            "total_rounds": rounds,
+            "user_rolls": [],
+            "bot_rolls": [],
+            "chat_id": message.chat.id
+        }
+
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid Bet or Rounds!")
+
+# -------------------------------------------------------------
+# INTERACTIVE GAME HANDLER FOR ROLL EMOJIS (DICE, BOWL, BB, DART)
 # -------------------------------------------------------------
 @bot.message_handler(content_types=['dice'])
 def handle_all_interactive_rolls(message):
     user_id = message.from_user.id
     emoji = message.dice.emoji
 
-    # 1. HOST BATTLE (🎲)
-    if user_id in ACTIVE_HB_GAMES and emoji == "🎲":
-        game = ACTIVE_HB_GAMES[user_id]
-        host_val = message.dice.value
-
-        bot.send_message(message.chat.id, f"🎲 Host rolled: <b>{host_val}</b>")
-        time.sleep(1)
-        bot.send_message(message.chat.id, "🤖 Bot is rolling dice...")
-
-        bot_msg = bot.send_dice(message.chat.id, "🎲")
-        bot_val = bot_msg.dice.value
-        time.sleep(2)
-
-        bet = game["bet"]
-        if host_val > bot_val:
-            win_amt = bet * 1.95
-            USER_BALANCES[user_id] += win_amt
-            bot.send_message(message.chat.id, f"🎉 <b>HOST WINS!</b>\nHost ({host_val}) vs Bot ({bot_val})\n💰 Won: ₹{win_amt:.2f}")
-        elif bot_val > host_val:
-            bot.send_message(message.chat.id, f"💥 <b>BOT WINS!</b>\nHost ({host_val}) vs Bot ({bot_val})\n🔻 Lost: ₹{bet:.2f}")
-        else:
-            USER_BALANCES[user_id] += bet
-            bot.send_message(message.chat.id, f"🤝 <b>TIE!</b>\nHost ({host_val}) vs Bot ({bot_val})\n💰 Bet Refunded: ₹{bet:.2f}")
-
-        del ACTIVE_HB_GAMES[user_id]
-        return
-
-    # 2. PVP DICE DUEL (🎲)
+    # 1. PVP DICE DUEL (🎲)
     if user_id in ACTIVE_DICE_GAMES and emoji == "🎲":
         game = ACTIVE_DICE_GAMES[user_id]
         user_val = message.dice.value
@@ -564,7 +557,7 @@ def handle_all_interactive_rolls(message):
             del ACTIVE_DICE_GAMES[user_id]
         return
 
-    # 3. BOWLING DUEL (🎳)
+    # 2. BOWLING DUEL (🎳)
     if user_id in ACTIVE_BOWL_GAMES and emoji == "🎳":
         game = ACTIVE_BOWL_GAMES[user_id]
         user_val = message.dice.value
@@ -586,7 +579,7 @@ def handle_all_interactive_rolls(message):
             del ACTIVE_BOWL_GAMES[user_id]
         return
 
-    # 4. BASKETBALL DUEL (🏀)
+    # 3. BASKETBALL DUEL (🏀)
     if user_id in ACTIVE_BB_GAMES and emoji == "🏀":
         game = ACTIVE_BB_GAMES[user_id]
         user_val = message.dice.value
@@ -606,6 +599,28 @@ def handle_all_interactive_rolls(message):
         if len(game["user_rolls"]) == game["total_rounds"]:
             evaluate_duel_match(message.chat.id, user_id, game, "🏀 Basketball")
             del ACTIVE_BB_GAMES[user_id]
+        return
+
+    # 4. DART DUEL (🎯)
+    if user_id in ACTIVE_DART_GAMES and emoji == "🎯":
+        game = ACTIVE_DART_GAMES[user_id]
+        user_val = message.dice.value
+        game["user_rolls"].append(user_val)
+
+        current_round = len(game["user_rolls"])
+        bot.send_message(message.chat.id, f"🎯 Round {current_round}: Your dart score <b>{user_val}</b>!")
+
+        time.sleep(1)
+        bot.send_message(message.chat.id, "🤖 Bot's turn to throw dart...")
+        bot_msg = bot.send_dice(message.chat.id, "🎯")
+        bot_val = bot_msg.dice.value
+        game["bot_rolls"].append(bot_val)
+
+        time.sleep(2)
+
+        if len(game["user_rolls"]) == game["total_rounds"]:
+            evaluate_duel_match(message.chat.id, user_id, game, "🎯 Dart")
+            del ACTIVE_DART_GAMES[user_id]
         return
 
 # COMMON MATCH RESULT EVALUATOR
