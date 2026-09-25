@@ -22,7 +22,7 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
-# Limbo Rocket Image URL
+# Limbo Rocket Image URL (Aapki custom image yahan set hai)
 LIMBO_IMAGE_URL = "https://i.postimg.cc/m2mYv63Z/1000449482.png"
 
 # Webhook clear on startup
