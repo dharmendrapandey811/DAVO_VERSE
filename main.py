@@ -21,8 +21,12 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=4
 
 USER_BALANCES = {}
 USER_UPI = {}
-ACTIVE_DICE_GAMES = {}
+
+# Active duel sessions
 ACTIVE_HB_GAMES = {}
+ACTIVE_DICE_GAMES = {}
+ACTIVE_BOWL_GAMES = {}
+ACTIVE_BB_GAMES = {}
 
 def get_balance(user_id):
     if user_id not in USER_BALANCES:
@@ -30,7 +34,7 @@ def get_balance(user_id):
     return USER_BALANCES[user_id]
 
 # -------------------------------------------------------------
-# START & COMMANDS
+# START & GAMES MENU
 # -------------------------------------------------------------
 @bot.message_handler(commands=['start'])
 def send_start(message):
@@ -49,8 +53,8 @@ def send_start(message):
         bot.reply_to(
             message,
             f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n"
-            f"🎮 Type <code>/games</code> to view games.\n"
-            f"💳 Type <code>/setupi your_upi@okicici</code> to set UPI.\n"
+            f"🎮 Type <code>/games</code> to view games list.\n"
+            f"💳 Type <code>/setupi your_upi@upi</code> to set UPI.\n"
             f"📤 Type <code>/withdraw amount</code> to withdraw money.\n"
             f"💸 Reply to any message with <code>/tip amount</code> to send money!"
         )
@@ -58,18 +62,18 @@ def send_start(message):
 @bot.message_handler(commands=['games', 'help'])
 def send_games_list(message):
     games_text = (
-        f"🎰 <b>{BOT_NAME} — GAMES LIST</b> 🎰\n\n"
-        f"🎲 <b>Host Battle:</b> <code>/hb amount</code>\n"
-        f"1️⃣ <b>PvP Dice Duel:</b> <code>/dice amount rounds</code>\n"
-        f"2️⃣ <b>Dice Rush:</b> <code>/dr amount high/low/even/odd</code>\n"
-        f"3️⃣ <b>Bowling:</b> <code>/bowl amount rounds</code>\n"
-        f"4️⃣ <b>Basketball:</b> <code>/basketball amount rounds</code>\n"
-        f"5️⃣ <b>Tower:</b> <code>/tower amount</code>\n"
-        f"6️⃣ <b>Limbo:</b> <code>/limbo amount target_x</code>\n\n"
+        f"🎰 <b>{BOT_NAME} — ALL GAMES</b> 🎰\n\n"
+        f"👑 <b>Host Battle:</b> <code>/hb amount</code>\n"
+        f"🎲 <b>PvP Dice Duel:</b> <code>/dice amount rounds</code>\n"
+        f"🎳 <b>Bowling Duel:</b> <code>/bowl amount rounds</code>\n"
+        f"🏀 <b>Basketball Duel:</b> <code>/basketball amount rounds</code>\n"
+        f"⚡ <b>Dice Rush:</b> <code>/dr amount high/low/even/odd</code>\n"
+        f"🚀 <b>Limbo:</b> <code>/limbo amount target_x</code>\n"
+        f"🏰 <b>Tower:</b> <code>/tower amount</code>\n\n"
         f"💳 <b>Deposit:</b> <code>/deposit</code>\n"
         f"⚙️ <b>Set UPI:</b> <code>/setupi upi_id</code>\n"
         f"📤 <b>Withdraw:</b> <code>/withdraw amount</code>\n"
-        f"💸 <b>Tip:</b> Reply to message with <code>/tip amount</code>\n"
+        f"💸 <b>Tip:</b> Reply with <code>/tip amount</code>\n"
         f"📌 <b>Wallet:</b> <code>/wallet</code>"
     )
     bot.reply_to(message, games_text)
@@ -195,7 +199,7 @@ def cmd_tip(message):
     except Exception: pass
 
 # -------------------------------------------------------------
-# SET UPI & WITHDRAW WITH APPROVE/REJECT BUTTONS
+# UPI & WITHDRAW SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['setupi'])
 def cmd_setupi(message):
@@ -320,7 +324,7 @@ def handle_withdraw_callback(call):
         except Exception: pass
 
 # -------------------------------------------------------------
-# HOST BATTLE (/hb) SYSTEM WITH BOT FUND DISPLAY
+# 1. HOST BATTLE (/hb)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['hb'])
 def cmd_hb(message):
@@ -360,19 +364,16 @@ def cmd_hb(message):
             f"💎 Davo Verse\n\n"
             f"🎲 <b>HOST BATTLE STARTED!</b>\n"
             f"💰 Bet Amount: ₹{bet_amount:.2f}\n\n"
-            f"👉 <b>Host Turn! Roll a Dice 🎲 now!</b>"
+            f"👉 <b>Host Turn! Send/Roll a Dice 🎲 now!</b>"
         )
 
-        ACTIVE_HB_GAMES[user_id] = {
-            "bet": bet_amount,
-            "chat_id": message.chat.id
-        }
+        ACTIVE_HB_GAMES[user_id] = {"bet": bet_amount, "chat_id": message.chat.id}
 
     except ValueError:
         bot.reply_to(message, "❌ Invalid Amount!")
 
 # -------------------------------------------------------------
-# INTERACTIVE /DICE GAME (PLAYER VS BOT BATTLE)
+# 2. PVP DICE DUEL (/dice)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['dice'])
 def cmd_dice(message):
@@ -402,12 +403,11 @@ def cmd_dice(message):
             f"🎲 <b>DICE BATTLE STARTED!</b>\n"
             f"💰 Bet Amount: ₹{bet_amount:.2f}\n"
             f"🔄 Total Rounds: {rounds}\n\n"
-            f"👉 <b>YOUR TURN! Roll {rounds} Dice now!</b>"
+            f"👉 <b>YOUR TURN! Send/Roll {rounds} Dice 🎲 now!</b>"
         )
 
         ACTIVE_DICE_GAMES[user_id] = {
             "bet": bet_amount,
-            "rounds_left": rounds,
             "total_rounds": rounds,
             "user_rolls": [],
             "bot_rolls": [],
@@ -417,22 +417,112 @@ def cmd_dice(message):
     except ValueError:
         bot.reply_to(message, "❌ Invalid Bet or Rounds!")
 
-# HANDLER FOR USER'S ROLLED DICE
-@bot.message_handler(content_types=['dice'])
-def handle_user_dice(message):
+# -------------------------------------------------------------
+# 3. BOWLING DUEL (/bowl)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['bowl'])
+def cmd_bowl(message):
     user_id = message.from_user.id
+    args = message.text.split()
 
-    if message.dice.emoji != "🎲":
+    if len(args) < 3:
+        bot.reply_to(message, "⚠️ Format: <code>/bowl amount rounds</code>\nExample: <code>/bowl 50 3</code>")
         return
 
-    # HANDLE HOST BATTLE (/hb)
-    if user_id in ACTIVE_HB_GAMES:
+    try:
+        bet_amount = float(args[1])
+        rounds = int(args[2])
+
+        if bet_amount < MIN_BET or rounds < 1 or rounds > 5:
+            bot.reply_to(message, "❌ Minimum Bet ₹10 and Rounds must be 1 to 5!")
+            return
+
+        if get_balance(user_id) < bet_amount:
+            bot.reply_to(message, "❌ Insufficient Balance!")
+            return
+
+        USER_BALANCES[user_id] -= bet_amount
+
+        bot.reply_to(
+            message,
+            f"🎳 <b>BOWLING BATTLE STARTED!</b>\n"
+            f"💰 Bet Amount: ₹{bet_amount:.2f}\n"
+            f"🔄 Total Rounds: {rounds}\n\n"
+            f"👉 <b>YOUR TURN! Send {rounds} Bowling 🎳 emoji now!</b>"
+        )
+
+        ACTIVE_BOWL_GAMES[user_id] = {
+            "bet": bet_amount,
+            "total_rounds": rounds,
+            "user_rolls": [],
+            "bot_rolls": [],
+            "chat_id": message.chat.id
+        }
+
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid Bet or Rounds!")
+
+# -------------------------------------------------------------
+# 4. BASKETBALL DUEL (/basketball or /bb)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['basketball', 'bb'])
+def cmd_basketball(message):
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 3:
+        bot.reply_to(message, "⚠️ Format: <code>/basketball amount rounds</code>\nExample: <code>/bb 50 3</code>")
+        return
+
+    try:
+        bet_amount = float(args[1])
+        rounds = int(args[2])
+
+        if bet_amount < MIN_BET or rounds < 1 or rounds > 5:
+            bot.reply_to(message, "❌ Minimum Bet ₹10 and Rounds must be 1 to 5!")
+            return
+
+        if get_balance(user_id) < bet_amount:
+            bot.reply_to(message, "❌ Insufficient Balance!")
+            return
+
+        USER_BALANCES[user_id] -= bet_amount
+
+        bot.reply_to(
+            message,
+            f"🏀 <b>BASKETBALL BATTLE STARTED!</b>\n"
+            f"💰 Bet Amount: ₹{bet_amount:.2f}\n"
+            f"🔄 Total Rounds: {rounds}\n\n"
+            f"👉 <b>YOUR TURN! Send {rounds} Basketball 🏀 emoji now!</b>"
+        )
+
+        ACTIVE_BB_GAMES[user_id] = {
+            "bet": bet_amount,
+            "total_rounds": rounds,
+            "user_rolls": [],
+            "bot_rolls": [],
+            "chat_id": message.chat.id
+        }
+
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid Bet or Rounds!")
+
+# -------------------------------------------------------------
+# INTERACTIVE GAME HANDLER FOR ALL ROLL EMOJIS
+# -------------------------------------------------------------
+@bot.message_handler(content_types=['dice'])
+def handle_all_interactive_rolls(message):
+    user_id = message.from_user.id
+    emoji = message.dice.emoji
+
+    # 1. HOST BATTLE (🎲)
+    if user_id in ACTIVE_HB_GAMES and emoji == "🎲":
         game = ACTIVE_HB_GAMES[user_id]
         host_val = message.dice.value
 
         bot.send_message(message.chat.id, f"🎲 Host rolled: <b>{host_val}</b>")
         time.sleep(1)
-        bot.send_message(message.chat.id, f"🤖 Bot is rolling dice...")
+        bot.send_message(message.chat.id, "🤖 Bot is rolling dice...")
 
         bot_msg = bot.send_dice(message.chat.id, "🎲")
         bot_val = bot_msg.dice.value
@@ -452,8 +542,8 @@ def handle_user_dice(message):
         del ACTIVE_HB_GAMES[user_id]
         return
 
-    # HANDLE MULTI DICE (/dice)
-    if user_id in ACTIVE_DICE_GAMES:
+    # 2. PVP DICE DUEL (🎲)
+    if user_id in ACTIVE_DICE_GAMES and emoji == "🎲":
         game = ACTIVE_DICE_GAMES[user_id]
         user_val = message.dice.value
         game["user_rolls"].append(user_val)
@@ -462,7 +552,7 @@ def handle_user_dice(message):
         bot.send_message(message.chat.id, f"🎯 Round {current_round}: You rolled <b>{user_val}</b>!")
 
         time.sleep(1)
-        bot.send_message(message.chat.id, f"🤖 Bot's turn to roll dice...")
+        bot.send_message(message.chat.id, "🤖 Bot's turn to roll...")
         bot_msg = bot.send_dice(message.chat.id, "🎲")
         bot_val = bot_msg.dice.value
         game["bot_rolls"].append(bot_val)
@@ -470,38 +560,87 @@ def handle_user_dice(message):
         time.sleep(2)
 
         if len(game["user_rolls"]) == game["total_rounds"]:
-            user_wins = 0
-            bot_wins = 0
-
-            summary = "📊 <b>FINAL MATCH RESULT</b>\n\n"
-            for i in range(game["total_rounds"]):
-                u_r = game["user_rolls"][i]
-                b_r = game["bot_rolls"][i]
-                if u_r > b_r:
-                    user_wins += 1
-                    res = " You Won"
-                elif b_r > u_r:
-                    bot_wins += 1
-                    res = " Bot Won"
-                else:
-                    res = " Tie"
-                summary += f"Round {i+1}: You ({u_r}) vs Bot ({b_r}) ➔ {res}\n"
-
-            if user_wins > bot_wins:
-                win_amt = game["bet"] * 1.95
-                USER_BALANCES[user_id] += win_amt
-                summary += f"\n🎉 <b>YOU WON THE MATCH!</b>\n💰 Total Prize: ₹{win_amt:.2f}"
-            elif bot_wins > user_wins:
-                summary += f"\n💥 <b>BOT WON THE MATCH!</b>\n🔻 You Lost: ₹{game['bet']:.2f}"
-            else:
-                USER_BALANCES[user_id] += game["bet"]
-                summary += f"\n🤝 <b>MATCH TIED!</b>\n💰 Bet Refunded: ₹{game['bet']:.2f}"
-
-            bot.send_message(message.chat.id, summary)
+            evaluate_duel_match(message.chat.id, user_id, game, "🎲 Dice")
             del ACTIVE_DICE_GAMES[user_id]
+        return
+
+    # 3. BOWLING DUEL (🎳)
+    if user_id in ACTIVE_BOWL_GAMES and emoji == "🎳":
+        game = ACTIVE_BOWL_GAMES[user_id]
+        user_val = message.dice.value
+        game["user_rolls"].append(user_val)
+
+        current_round = len(game["user_rolls"])
+        bot.send_message(message.chat.id, f"🎳 Round {current_round}: Your score <b>{user_val}</b>!")
+
+        time.sleep(1)
+        bot.send_message(message.chat.id, "🤖 Bot's turn to bowl...")
+        bot_msg = bot.send_dice(message.chat.id, "🎳")
+        bot_val = bot_msg.dice.value
+        game["bot_rolls"].append(bot_val)
+
+        time.sleep(2)
+
+        if len(game["user_rolls"]) == game["total_rounds"]:
+            evaluate_duel_match(message.chat.id, user_id, game, "🎳 Bowling")
+            del ACTIVE_BOWL_GAMES[user_id]
+        return
+
+    # 4. BASKETBALL DUEL (🏀)
+    if user_id in ACTIVE_BB_GAMES and emoji == "🏀":
+        game = ACTIVE_BB_GAMES[user_id]
+        user_val = message.dice.value
+        game["user_rolls"].append(user_val)
+
+        current_round = len(game["user_rolls"])
+        bot.send_message(message.chat.id, f"🏀 Round {current_round}: Your basket score <b>{user_val}</b>!")
+
+        time.sleep(1)
+        bot.send_message(message.chat.id, "🤖 Bot's turn to shoot...")
+        bot_msg = bot.send_dice(message.chat.id, "🏀")
+        bot_val = bot_msg.dice.value
+        game["bot_rolls"].append(bot_val)
+
+        time.sleep(2)
+
+        if len(game["user_rolls"]) == game["total_rounds"]:
+            evaluate_duel_match(message.chat.id, user_id, game, "🏀 Basketball")
+            del ACTIVE_BB_GAMES[user_id]
+        return
+
+# COMMON MATCH RESULT EVALUATOR
+def evaluate_duel_match(chat_id, user_id, game, game_name):
+    user_wins = 0
+    bot_wins = 0
+
+    summary = f"📊 <b>FINAL {game_name.upper()} RESULT</b>\n\n"
+    for i in range(game["total_rounds"]):
+        u_r = game["user_rolls"][i]
+        b_r = game["bot_rolls"][i]
+        if u_r > b_r:
+            user_wins += 1
+            res = " You Won"
+        elif b_r > u_r:
+            bot_wins += 1
+            res = " Bot Won"
+        else:
+            res = " Tie"
+        summary += f"Round {i+1}: You ({u_r}) vs Bot ({b_r}) ➔ {res}\n"
+
+    if user_wins > bot_wins:
+        win_amt = game["bet"] * 1.95
+        USER_BALANCES[user_id] += win_amt
+        summary += f"\n🎉 <b>YOU WON THE MATCH!</b>\n💰 Total Prize: ₹{win_amt:.2f}"
+    elif bot_wins > user_wins:
+        summary += f"\n💥 <b>BOT WON THE MATCH!</b>\n🔻 You Lost: ₹{game['bet']:.2f}"
+    else:
+        USER_BALANCES[user_id] += game["bet"]
+        summary += f"\n🤝 <b>MATCH TIED!</b>\n💰 Bet Refunded: ₹{game['bet']:.2f}"
+
+    bot.send_message(chat_id, summary)
 
 # -------------------------------------------------------------
-# OTHER GAMES (DR, BOWL, BASKETBALL, TOWER, LIMBO)
+# NON-INTERACTIVE GAMES (DR, LIMBO, TOWER)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['dr'])
 def cmd_dr(message):
@@ -531,60 +670,30 @@ def cmd_dr(message):
             bot.reply_to(message, f"🎲 Result: <b>{val}</b> | 🔻 <b>LOST ₹{bet_amount:.2f}!</b>")
     except Exception: pass
 
-@bot.message_handler(commands=['bowl'])
-def cmd_bowl(message):
+@bot.message_handler(commands=['limbo'])
+def cmd_limbo(message):
     user_id = message.from_user.id
     args = message.text.split()
     if len(args) < 3:
-        bot.reply_to(message, "⚠️ Format: <code>/bowl amount rounds</code>")
+        bot.reply_to(message, "⚠️ Format: <code>/limbo amount target_x</code>")
         return
 
     try:
-        bet_amount, rounds = float(args[1]), int(args[2])
-        if bet_amount < MIN_BET or rounds < 1 or rounds > 5 or get_balance(user_id) < bet_amount * rounds:
-            bot.reply_to(message, "❌ Invalid Bet or Low Balance!")
+        bet_amount = float(args[1])
+        target_x = float(args[2].lower().replace("x", ""))
+        if bet_amount < MIN_BET or get_balance(user_id) < bet_amount:
+            bot.reply_to(message, "❌ Low Balance!")
             return
 
-        USER_BALANCES[user_id] -= bet_amount * rounds
-        strikes = 0
+        USER_BALANCES[user_id] -= bet_amount
+        res_x = round(random.uniform(1.00, target_x + 1.20), 2)
 
-        for _ in range(rounds):
-            msg = bot.send_dice(message.chat.id, "Bowling")
-            if msg.dice.value == 6:
-                strikes += 1
-            time.sleep(2)
-
-        win_amt = (bet_amount * 3.0) * strikes
-        USER_BALANCES[user_id] += win_amt
-        bot.reply_to(message, f"🎳 Strikes: {strikes}/{rounds}\n🎉 Won: ₹{win_amt:.2f}")
-    except Exception: pass
-
-@bot.message_handler(commands=['basketball', 'bb'])
-def cmd_basketball(message):
-    user_id = message.from_user.id
-    args = message.text.split()
-    if len(args) < 3:
-        bot.reply_to(message, "⚠️ Format: <code>/basketball amount rounds</code>")
-        return
-
-    try:
-        bet_amount, rounds = float(args[1]), int(args[2])
-        if bet_amount < MIN_BET or rounds < 1 or rounds > 5 or get_balance(user_id) < bet_amount * rounds:
-            bot.reply_to(message, "❌ Invalid Bet or Low Balance!")
-            return
-
-        USER_BALANCES[user_id] -= bet_amount * rounds
-        goals = 0
-
-        for _ in range(rounds):
-            msg = bot.send_dice(message.chat.id, "Basketball")
-            if msg.dice.value in [4, 5]:
-                goals += 1
-            time.sleep(2)
-
-        win_amt = (bet_amount * 1.8) * goals
-        USER_BALANCES[user_id] += win_amt
-        bot.reply_to(message, f"🏀 Basket Scores: {goals}/{rounds}\n🎉 Won: ₹{win_amt:.2f}")
+        if res_x >= target_x:
+            win_amt = bet_amount * target_x
+            USER_BALANCES[user_id] += win_amt
+            bot.reply_to(message, f"🚀 <b>LIMBO RESULT: {res_x:.2f}x</b>\n🎉 <b>Target Hit! Won ₹{win_amt:.2f}!</b>")
+        else:
+            bot.reply_to(message, f"💥 <b>CRASHED AT {res_x:.2f}x!</b>\n🔻 Lost ₹{bet_amount:.2f}")
     except Exception: pass
 
 @bot.message_handler(commands=['tower'])
@@ -618,34 +727,8 @@ def cmd_tower(message):
             bot.reply_to(message, f"💥 Tower Crashed on Level 1!\n🔻 Lost ₹{bet_amount:.2f}")
     except Exception: pass
 
-@bot.message_handler(commands=['limbo'])
-def cmd_limbo(message):
-    user_id = message.from_user.id
-    args = message.text.split()
-    if len(args) < 3:
-        bot.reply_to(message, "⚠️ Format: <code>/limbo amount target_x</code>")
-        return
-
-    try:
-        bet_amount = float(args[1])
-        target_x = float(args[2].lower().replace("x", ""))
-        if bet_amount < MIN_BET or get_balance(user_id) < bet_amount:
-            bot.reply_to(message, "❌ Low Balance!")
-            return
-
-        USER_BALANCES[user_id] -= bet_amount
-        res_x = round(random.uniform(1.00, target_x + 1.20), 2)
-
-        if res_x >= target_x:
-            win_amt = bet_amount * target_x
-            USER_BALANCES[user_id] += win_amt
-            bot.reply_to(message, f"🚀 <b>LIMBO RESULT: {res_x:.2f}x</b>\n🎉 <b>Target Hit! Won ₹{win_amt:.2f}!</b>")
-        else:
-            bot.reply_to(message, f"💥 <b>CRASHED AT {res_x:.2f}x!</b>\n🔻 Lost ₹{bet_amount:.2f}")
-    except Exception: pass
-
 # -------------------------------------------------------------
-# DUMMY WEB SERVER
+# DUMMY WEB SERVER FOR HOSTING (RENDER / REPLIT / HEROKU)
 # -------------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -659,7 +742,7 @@ def run_web_server():
     server.serve_forever()
 
 # -------------------------------------------------------------
-# START ENGINE
+# START BOT ENGINE
 # -------------------------------------------------------------
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
