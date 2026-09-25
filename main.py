@@ -4,6 +4,7 @@ import random
 import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # -------------------------------------------------------------
 # CONFIGURATION
@@ -19,6 +20,8 @@ MAX_BET = 300.0
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=4)
 
 USER_BALANCES = {}
+USER_UPI = {}
+ACTIVE_DICE_GAMES = {}
 
 def get_balance(user_id):
     if user_id not in USER_BALANCES:
@@ -26,7 +29,7 @@ def get_balance(user_id):
     return USER_BALANCES[user_id]
 
 # -------------------------------------------------------------
-# START & ADMIN COMMANDS
+# START & COMMANDS
 # -------------------------------------------------------------
 @bot.message_handler(commands=['start'])
 def send_start(message):
@@ -44,13 +47,46 @@ def send_start(message):
     else:
         bot.reply_to(
             message,
-            f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n"
-            f"🎮 Type <code>/games</code> to view all games.\n"
-            f"💳 Type <code>/deposit</code> or <code>/withdraw</code> for payments.\n"
-            f"💸 Type <code>/tip user_id amount</code> to send money to another user."
+            f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n"
+            f"🎮 Type <code>/games</code> to view games.\n"
+            f"💳 Type <code>/setupi your_upi@okicici</code> to set UPI.\n"
+            f"📤 Type <code>/withdraw amount</code> to withdraw money.\n"
+            f"💸 Reply to any message with <code>/tip amount</code> to send money!"
         )
 
-# ADMIN BALANCE ADD
+@bot.message_handler(commands=['games', 'help'])
+def send_games_list(message):
+    games_text = (
+        f"🎰 <b>{BOT_NAME} — GAMES LIST</b> 🎰\n\n"
+        f"1️⃣ <b>PvP Dice Duel:</b> <code>/dice amount rounds</code>\n"
+        f"2️⃣ <b>Dice Rush:</b> <code>/dr amount high/low/even/odd</code>\n"
+        f"3️⃣ <b>Bowling:</b> <code>/bowl amount rounds</code>\n"
+        f"4️⃣ <b>Basketball:</b> <code>/basketball amount rounds</code>\n"
+        f"5️⃣ <b>Tower:</b> <code>/tower amount</code>\n"
+        f"6️⃣ <b>Limbo:</b> <code>/limbo amount target_x</code>\n\n"
+        f"💳 <b>Deposit:</b> <code>/deposit</code>\n"
+        f"⚙️ <b>Set UPI:</b> <code>/setupi upi_id</code>\n"
+        f"📤 <b>Withdraw:</b> <code>/withdraw amount</code>\n"
+        f"💸 <b>Tip:</b> Reply to message with <code>/tip amount</code>\n"
+        f"📌 <b>Wallet:</b> <code>/wallet</code>"
+    )
+    bot.reply_to(message, games_text)
+
+@bot.message_handler(commands=['wallet', 'balance', 'bal'])
+def check_wallet(message):
+    user_id = message.from_user.id
+    upi = USER_UPI.get(user_id, "Not Set (Use /setupi)")
+    bot.reply_to(
+        message, 
+        f"💳 <b>{BOT_NAME} WALLET</b>\n"
+        f"🆔 ID: <code>{user_id}</code>\n"
+        f"💰 Balance: ₹{get_balance(user_id):.2f}\n"
+        f"📱 UPI ID: <code>{upi}</code>"
+    )
+
+# -------------------------------------------------------------
+# ADMIN BALANCE MANAGEMENT
+# -------------------------------------------------------------
 @bot.message_handler(commands=['addbal'])
 def admin_add_balance(message):
     if message.from_user.id != ADMIN_ID: return
@@ -63,14 +99,13 @@ def admin_add_balance(message):
         target_id = int(args[1])
         amount = float(args[2])
         USER_BALANCES[target_id] = get_balance(target_id) + amount
-        bot.reply_to(message, f"✅ Added ₹{amount:.2f} to User ID: <code>{target_id}</code>\n💳 New Bal: ₹{USER_BALANCES[target_id]:.2f}")
+        bot.reply_to(message, f"✅ Added ₹{amount:.2f} to <code>{target_id}</code>\n💳 New Bal: ₹{USER_BALANCES[target_id]:.2f}")
         try:
             bot.send_message(target_id, f"🎉 <b>ADMIN ADDED BALANCE!</b>\n💰 Added: ₹{amount:.2f}\n💳 Bal: ₹{USER_BALANCES[target_id]:.2f}")
         except Exception: pass
     except ValueError:
         bot.reply_to(message, "❌ Invalid ID or Amount!")
 
-# ADMIN BALANCE CUT
 @bot.message_handler(commands=['cutbal'])
 def admin_cut_balance(message):
     if message.from_user.id != ADMIN_ID: return
@@ -91,85 +126,90 @@ def admin_cut_balance(message):
     except ValueError:
         bot.reply_to(message, "❌ Invalid ID or Amount!")
 
-@bot.message_handler(commands=['games', 'help'])
-def send_games_list(message):
-    games_text = (
-        f"🎰 <b>{BOT_NAME} — GAMES LIST</b> 🎰\n\n"
-        f"1️⃣ <b>Dice Rush:</b> <code>/dr amount high/low/even/odd</code>\n"
-        f"2️⃣ <b>Multi Dice:</b> <code>/dice amount rounds</code>\n"
-        f"3️⃣ <b>Bowling:</b> <code>/bowl amount rounds</code>\n"
-        f"4️⃣ <b>Basketball:</b> <code>/basketball amount rounds</code>\n"
-        f"5️⃣ <b>Tower:</b> <code>/tower amount</code>\n"
-        f"6️⃣ <b>Limbo:</b> <code>/limbo amount target_x</code>\n\n"
-        f"💳 <b>Deposit:</b> <code>/deposit</code>\n"
-        f"📤 <b>Withdraw:</b> <code>/withdraw amount upi</code>\n"
-        f"💸 <b>Tip:</b> <code>/tip user_id amount</code>\n"
-        f"📌 <b>Wallet:</b> <code>/wallet</code>"
-    )
-    bot.reply_to(message, games_text)
-
-@bot.message_handler(commands=['wallet', 'balance', 'bal'])
-def check_wallet(message):
-    user_id = message.from_user.id
-    bot.reply_to(message, f"💳 <b>{BOT_NAME} WALLET</b>\n🆔 ID: <code>{user_id}</code>\n💰 Balance: ₹{get_balance(user_id):.2f}")
-
 # -------------------------------------------------------------
-# TIP / TRANSFER SYSTEM
+# REPLY TIP SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['tip'])
 def cmd_tip(message):
     sender_id = message.from_user.id
     args = message.text.split()
 
-    if len(args) < 3:
-        bot.reply_to(message, "⚠️ Format: <code>/tip user_id amount</code>\nExample: <code>/tip 123456789 50</code>")
+    receiver_id = None
+    amount = 0.0
+
+    # 1. Message Reply Tip
+    if message.reply_to_message:
+        receiver_id = message.reply_to_message.from_user.id
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Format: Reply to message with <code>/tip amount</code>")
+            return
+        try:
+            amount = float(args[1])
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid Amount!")
+            return
+
+    # 2. Command Direct Tip (/tip user_id amount)
+    elif len(args) >= 3:
+        try:
+            receiver_id = int(args[1])
+            amount = float(args[2])
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid User ID or Amount!")
+            return
+    else:
+        bot.reply_to(message, "⚠️ Reply to a user's message with <code>/tip amount</code> or use <code>/tip user_id amount</code>")
         return
 
+    if receiver_id == sender_id:
+        bot.reply_to(message, "❌ Aap khud ko tip nahi bhej sakte!")
+        return
+
+    if amount < 1.0:
+        bot.reply_to(message, "❌ Minimum tip amount ₹1.00 hai.")
+        return
+
+    if get_balance(sender_id) < amount:
+        bot.reply_to(message, "❌ Insufficient balance!")
+        return
+
+    # Transfer Process
+    USER_BALANCES[sender_id] -= amount
+    USER_BALANCES[receiver_id] = get_balance(receiver_id) + amount
+
+    bot.reply_to(
+        message,
+        f"💸 <b>TIP SENT SUCCESSFULLY!</b>\n\n"
+        f"👤 Sent To: <code>{receiver_id}</code>\n"
+        f"💰 Amount: ₹{amount:.2f}\n"
+        f"💳 Remaining Bal: ₹{USER_BALANCES[sender_id]:.2f}"
+    )
+
     try:
-        receiver_id = int(args[1])
-        amount = float(args[2])
-
-        if receiver_id == sender_id:
-            bot.reply_to(message, "❌ Aap khud ko tip nahi bhej sakte!")
-            return
-
-        if amount < 1.0:
-            bot.reply_to(message, "❌ Minimum tip amount ₹1.00 hai.")
-            return
-
-        if get_balance(sender_id) < amount:
-            bot.reply_to(message, "❌ Insufficient balance for tip!")
-            return
-
-        # Transfer process
-        USER_BALANCES[sender_id] -= amount
-        USER_BALANCES[receiver_id] = get_balance(receiver_id) + amount
-
-        bot.reply_to(
-            message,
-            f"💸 <b>TIP SENT SUCCESSFULLY!</b>\n\n"
-            f"👤 Sent To: <code>{receiver_id}</code>\n"
+        bot.send_message(
+            receiver_id,
+            f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
+            f"👤 From: {message.from_user.full_name} (<code>{sender_id}</code>)\n"
             f"💰 Amount: ₹{amount:.2f}\n"
-            f"💳 Remaining Bal: ₹{USER_BALANCES[sender_id]:.2f}"
+            f"💳 New Bal: ₹{USER_BALANCES[receiver_id]:.2f}"
         )
-
-        try:
-            bot.send_message(
-                receiver_id,
-                f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
-                f"👤 From: {message.from_user.full_name} (<code>{sender_id}</code>)\n"
-                f"💰 Amount: ₹{amount:.2f}\n"
-                f"💳 New Bal: ₹{USER_BALANCES[receiver_id]:.2f}"
-            )
-        except Exception:
-            pass
-
-    except ValueError:
-        bot.reply_to(message, "❌ Invalid User ID or Amount!")
+    except Exception: pass
 
 # -------------------------------------------------------------
-# DEPOSIT & WITHDRAW HANDLERS
+# SET UPI & WITHDRAW WITH APPROVE/REJECT BUTTONS
 # -------------------------------------------------------------
+@bot.message_handler(commands=['setupi'])
+def cmd_setupi(message):
+    user_id = message.from_user.id
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "⚠️ Format: <code>/setupi your_upi_id@upi</code>")
+        return
+
+    upi_id = args[1]
+    USER_UPI[user_id] = upi_id
+    bot.reply_to(message, f"✅ UPI ID Saved: <code>{upi_id}</code>")
+
 @bot.message_handler(commands=['deposit'])
 def cmd_deposit(message):
     user_id = message.from_user.id
@@ -211,13 +251,17 @@ def cmd_withdraw(message):
     user_id = message.from_user.id
     args = message.text.split()
 
-    if len(args) < 3:
-        bot.reply_to(message, "⚠️ Format: <code>/withdraw amount upi_id</code>\nExample: <code>/withdraw 100 username@upi</code>")
+    upi_id = USER_UPI.get(user_id)
+    if not upi_id:
+        bot.reply_to(message, "⚠️ Pehle apni UPI set karein using: <code>/setupi your_upi@upi</code>")
+        return
+
+    if len(args) < 2:
+        bot.reply_to(message, "⚠️ Format: <code>/withdraw amount</code>")
         return
 
     try:
         amount = float(args[1])
-        user_upi = args[2]
 
         if amount < MIN_BET:
             bot.reply_to(message, f"❌ Minimum withdrawal amount is ₹{MIN_BET:.2f}")
@@ -228,24 +272,164 @@ def cmd_withdraw(message):
             return
 
         USER_BALANCES[user_id] -= amount
-        bot.reply_to(message, f"✅ Withdrawal request of ₹{amount:.2f} submitted!\nAdmin process karega.")
+        bot.reply_to(message, f"⏳ Withdrawal request of ₹{amount:.2f} submitted!\nAdmin approval ke baad transfer hoga.")
+
+        # Admin Approve / Reject Buttons
+        markup = InlineKeyboardMarkup()
+        btn_approve = InlineKeyboardButton("✅ Approve", callback_data=f"wd_app_{user_id}_{amount}")
+        btn_reject = InlineKeyboardButton("❌ Reject & Refund", callback_data=f"wd_rej_{user_id}_{amount}")
+        markup.add(btn_approve, btn_reject)
 
         bot.send_message(
             ADMIN_ID,
             f"📤 <b>NEW WITHDRAWAL REQUEST!</b>\n\n"
             f"👤 User: {message.from_user.full_name} (<code>{user_id}</code>)\n"
             f"💰 Amount: ₹{amount:.2f}\n"
-            f"💳 UPI: <code>{user_upi}</code>\n\n"
-            f"<b>If Rejected (Refund):</b>\n<code>/addbal {user_id} {amount}</code>"
+            f"💳 UPI ID: <code>{upi_id}</code>",
+            reply_markup=markup
         )
     except ValueError:
         bot.reply_to(message, "❌ Invalid Amount!")
 
-# -------------------------------------------------------------
-# GAMES SECTION
-# -------------------------------------------------------------
+# CALLBACK FOR WITHDRAW APPROVAL / REJECTION
+@bot.callback_query_handler(func=lambda call: call.data.startswith("wd_"))
+def handle_withdraw_callback(call):
+    if call.from_user.id != ADMIN_ID: return
 
-# 1. DICE RUSH
+    data = call.data.split("_")
+    action = data[1] # app or rej
+    target_id = int(data[2])
+    amount = float(data[3])
+
+    if action == "app":
+        bot.edit_message_text(
+            f"✅ <b>WITHDRAWAL APPROVED!</b>\n\n👤 User: <code>{target_id}</code>\n💰 Amount: ₹{amount:.2f}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        try:
+            bot.send_message(target_id, f"🎉 <b>WITHDRAWAL SUCCESSFUL!</b>\n💰 ₹{amount:.2f} has been sent to your UPI ID!")
+        except Exception: pass
+
+    elif action == "rej":
+        USER_BALANCES[target_id] = get_balance(target_id) + amount
+        bot.edit_message_text(
+            f"❌ <b>WITHDRAWAL REJECTED & REFUNDED!</b>\n\n👤 User: <code>{target_id}</code>\n💰 Refunded: ₹{amount:.2f}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        try:
+            bot.send_message(target_id, f"❌ <b>WITHDRAWAL REJECTED!</b>\n💰 ₹{amount:.2f} has been refunded back to your wallet.")
+        except Exception: pass
+
+# -------------------------------------------------------------
+# INTERACTIVE /DICE GAME (PLAYER VS BOT BATTLE)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['dice'])
+def cmd_dice(message):
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 3:
+        bot.reply_to(message, "⚠️ Format: <code>/dice amount rounds</code>\nExample: <code>/dice 50 3</code>")
+        return
+
+    try:
+        bet_amount = float(args[1])
+        rounds = int(args[2])
+
+        if bet_amount < MIN_BET or rounds < 1 or rounds > 5:
+            bot.reply_to(message, "❌ Minimum Bet ₹10 and Rounds must be 1 to 5!")
+            return
+
+        if get_balance(user_id) < bet_amount:
+            bot.reply_to(message, "❌ Insufficient Balance!")
+            return
+
+        USER_BALANCES[user_id] -= bet_amount
+
+        bot.reply_to(
+            message,
+            f"🎲 <b>DICE BATTLE STARTED!</b>\n"
+            f"💰 Bet Amount: ₹{bet_amount:.2f}\n"
+            f"🔄 Total Rounds: {rounds}\n\n"
+            f"👉 <b>YOUR TURN! Roll {rounds} Dice now!</b>"
+        )
+
+        ACTIVE_DICE_GAMES[user_id] = {
+            "bet": bet_amount,
+            "rounds_left": rounds,
+            "total_rounds": rounds,
+            "user_rolls": [],
+            "bot_rolls": [],
+            "chat_id": message.chat.id
+        }
+
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid Bet or Rounds!")
+
+@bot.message_handler(content_types=['dice'])
+def handle_user_dice(message):
+    user_id = message.from_user.id
+
+    if user_id not in ACTIVE_DICE_GAMES:
+        return
+
+    game = ACTIVE_DICE_GAMES[user_id]
+
+    if message.dice.emoji != "🎲":
+        return
+
+    user_val = message.dice.value
+    game["user_rolls"].append(user_val)
+
+    current_round = len(game["user_rolls"])
+    bot.send_message(message.chat.id, f"🎯 Round {current_round}: You rolled <b>{user_val}</b>!")
+
+    # Bot's Turn
+    time.sleep(1)
+    bot.send_message(message.chat.id, f"🤖 Bot's turn to roll dice...")
+    bot_msg = bot.send_dice(message.chat.id, "🎲")
+    bot_val = bot_msg.dice.value
+    game["bot_rolls"].append(bot_val)
+
+    time.sleep(2)
+
+    # Check if rounds are complete
+    if len(game["user_rolls"]) == game["total_rounds"]:
+        user_wins = 0
+        bot_wins = 0
+
+        summary = "📊 <b>FINAL MATCH RESULT</b>\n\n"
+        for i in range(game["total_rounds"]):
+            u_r = game["user_rolls"][i]
+            b_r = game["bot_rolls"][i]
+            if u_r > b_r:
+                user_wins += 1
+                res = " You Won"
+            elif b_r > u_r:
+                bot_wins += 1
+                res = " Bot Won"
+            else:
+                res = " Tie"
+            summary += f"Round {i+1}: You ({u_r}) vs Bot ({b_r}) ➔ {res}\n"
+
+        if user_wins > bot_wins:
+            win_amt = game["bet"] * 1.95
+            USER_BALANCES[user_id] += win_amt
+            summary += f"\n🎉 <b>YOU WON THE MATCH!</b>\n💰 Total Prize: ₹{win_amt:.2f}"
+        elif bot_wins > user_wins:
+            summary += f"\n💥 <b>BOT WON THE MATCH!</b>\n🔻 You Lost: ₹{game['bet']:.2f}"
+        else:
+            USER_BALANCES[user_id] += game["bet"]
+            summary += f"\n🤝 <b>MATCH TIED!</b>\n💰 Bet Refunded: ₹{game['bet']:.2f}"
+
+        bot.send_message(message.chat.id, summary)
+        del ACTIVE_DICE_GAMES[user_id]
+
+# -------------------------------------------------------------
+# OTHER GAMES (DR, BOWL, BASKETBALL, TOWER, LIMBO)
+# -------------------------------------------------------------
 @bot.message_handler(commands=['dr'])
 def cmd_dr(message):
     user_id = message.from_user.id
@@ -274,37 +458,6 @@ def cmd_dr(message):
             bot.reply_to(message, f"🎲 Result: <b>{val}</b> | 🔻 <b>LOST ₹{bet_amount:.2f}!</b>")
     except Exception: pass
 
-# 2. MULTI DICE
-@bot.message_handler(commands=['dice'])
-def cmd_dice(message):
-    user_id = message.from_user.id
-    args = message.text.split()
-    if len(args) < 3:
-        bot.reply_to(message, "⚠️ Format: <code>/dice amount rounds</code>")
-        return
-
-    try:
-        bet_amount, rounds = float(args[1]), int(args[2])
-        if bet_amount < MIN_BET or rounds < 1 or rounds > 5 or get_balance(user_id) < bet_amount * rounds:
-            bot.reply_to(message, "❌ Invalid Bet, Rounds (1-5), or Low Balance!")
-            return
-
-        total_bet = bet_amount * rounds
-        USER_BALANCES[user_id] -= total_bet
-        wins = 0
-
-        for _ in range(rounds):
-            msg = bot.send_dice(message.chat.id, "🎲")
-            if msg.dice.value >= 4:
-                wins += 1
-            time.sleep(2)
-
-        win_amt = (bet_amount * 1.95) * wins
-        USER_BALANCES[user_id] += win_amt
-        bot.reply_to(message, f"🎲 Rounds Played: {rounds} | Wins: {wins}\n🎉 Total Returned: ₹{win_amt:.2f}")
-    except Exception: pass
-
-# 3. BOWLING
 @bot.message_handler(commands=['bowl'])
 def cmd_bowl(message):
     user_id = message.from_user.id
@@ -333,7 +486,6 @@ def cmd_bowl(message):
         bot.reply_to(message, f"🎳 Strikes: {strikes}/{rounds}\n🎉 Won: ₹{win_amt:.2f}")
     except Exception: pass
 
-# 4. BASKETBALL
 @bot.message_handler(commands=['basketball', 'bb'])
 def cmd_basketball(message):
     user_id = message.from_user.id
@@ -362,7 +514,6 @@ def cmd_basketball(message):
         bot.reply_to(message, f"🏀 Basket Scores: {goals}/{rounds}\n🎉 Won: ₹{win_amt:.2f}")
     except Exception: pass
 
-# 5. TOWER
 @bot.message_handler(commands=['tower'])
 def cmd_tower(message):
     user_id = message.from_user.id
@@ -394,7 +545,6 @@ def cmd_tower(message):
             bot.reply_to(message, f"💥 Tower Crashed on Level 1!\n🔻 Lost ₹{bet_amount:.2f}")
     except Exception: pass
 
-# 6. LIMBO
 @bot.message_handler(commands=['limbo'])
 def cmd_limbo(message):
     user_id = message.from_user.id
@@ -422,7 +572,7 @@ def cmd_limbo(message):
     except Exception: pass
 
 # -------------------------------------------------------------
-# DUMMY WEB SERVER FOR RENDER PORT CHECK
+# DUMMY WEB SERVER
 # -------------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
