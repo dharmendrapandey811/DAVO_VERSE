@@ -22,7 +22,7 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
-# Limbo Rocket Image URL (Aapki custom image yahan set hai)
+# Limbo Rocket Image URL / File ID (Yahan aap apna File ID paste kar sakte hain baad me)
 LIMBO_IMAGE_URL = "https://i.postimg.cc/m2mYv63Z/1000449482.png"
 
 # Webhook clear on startup
@@ -659,12 +659,18 @@ def handle_pvp_callbacks(call):
         logging.error(f"PvP CB Error: {e}")
 
 # -------------------------------------------------------------
-# COMBINED INPUT HANDLER (TEXT & PHOTO)
+# COMBINED INPUT HANDLER (TEXT & PHOTO) WITH FILE ID TOOL FOR ADMIN
 # -------------------------------------------------------------
 @bot.message_handler(content_types=['text', 'photo'])
 def handle_text_and_photos(message):
     try:
         user_id = message.from_user.id
+
+        # Agar Admin ne photo bheji hai, toh bot uska File ID dega (Limbo image ke liye)
+        if message.content_type == 'photo' and user_id == ADMIN_ID and message.chat.type == 'private':
+            file_id = message.photo[-1].file_id
+            bot.reply_to(message, f"📸 <b>Aapka File ID yeh raha:</b>\n<code>{file_id}</code>\n\n<i>Isse copy karke LIMBO_IMAGE_URL me daal dein!</i>")
+            return
 
         if user_id in USER_WAITING_STATE:
             state = USER_WAITING_STATE.get(user_id)
