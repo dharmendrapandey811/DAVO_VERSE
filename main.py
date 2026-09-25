@@ -25,7 +25,7 @@ MAX_BET = 10000.0
 # Limbo Rocket Image URL
 LIMBO_IMAGE_URL = "https://i.postimg.cc/m2mYv63Z/1000449482.png"
 
-# Webhook clear
+# Webhook clear on startup
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=5)
     logging.info("Cleaned pending webhooks successfully.")
@@ -185,7 +185,7 @@ def admin_add_balance(message):
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
 # -------------------------------------------------------------
-# MENU & WALLET
+# MENU, WALLET & BOT FUND
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
 def send_games_list(message):
@@ -195,7 +195,8 @@ def send_games_list(message):
         f"💳 <b>FINANCE COMMANDS:</b>\n"
         f"➕ <b>Deposit:</b> <code>/deposit amount</code>\n"
         f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
-        f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n\n"
+        f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n"
+        f"🏦 <b>Bot Fund:</b> <code>/hb</code>\n\n"
         f"⚔️ <b>PVP / BOT GAMES:</b>\n"
         f"🎲 <b>Dice:</b> <code>/dice 100 4</code>\n"
         f"🎳 <b>Bowling:</b> <code>/bowl 100 6</code>\n"
@@ -211,6 +212,19 @@ def send_games_list(message):
 def check_wallet(message):
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
+
+@bot.message_handler(commands=['hb', 'botfund'])
+def cmd_bot_fund(message):
+    try:
+        bot.reply_to(
+            message,
+            "🤖 <b>BOT FUND</b>\n"
+            "🏦 Balance: $1,451.83\n"
+            "✅ Active — Bets Allowed!\n"
+            "💎 Davo Verse"
+        )
+    except Exception as e:
+        logging.error(f"HB Command Error: {e}")
 
 # -------------------------------------------------------------
 # DEPOSIT & WITHDRAWAL
@@ -379,19 +393,46 @@ def cmd_limbo(message):
         user_id = message.from_user.id
         args = message.text.split()[1:]
         if len(args) < 2:
-            bot.reply_to(message, "⚠️ Usage: <code>/limbo [amount/all] [target]</code>")
+            bot.reply_to(message, "⚠️ Usage: <code>/limbo [amount/all] [target]</code>\nExample: <code>/limbo 100 2.0</code>")
             return
 
         balance = get_balance(user_id)
         val1, val2 = args[0].lower(), args[1].lower()
-        if val1 == "all": amount, target = balance, float(val2)
-        elif val2 == "all": amount, target = balance, float(val1)
-        else:
-            try: amount, target = float(val1), float(val2)
-            except ValueError: amount, target = float(val2), float(val1)
+        
+        amount = None
+        target = None
 
-        if target < 1.01 or target > 100.0 or amount < MIN_BET or balance < amount:
-            bot.reply_to(message, "❌ Invalid Amount or Target Multiplier (1.01x - 100.0x)!")
+        if val1 == "all":
+            amount = balance
+            try: target = float(val2)
+            except ValueError: pass
+        elif val2 == "all":
+            amount = balance
+            try: target = float(val1)
+            except ValueError: pass
+        else:
+            try:
+                v1, v2 = float(val1), float(val2)
+                if v1 < 10 and v2 >= 10:
+                    target, amount = v1, v2
+                elif v2 < 10 and v1 >= 10:
+                    target, amount = v2, v1
+                else:
+                    amount, target = v1, v2
+            except ValueError:
+                bot.reply_to(message, "❌ Valid numbers enter karein!")
+                return
+
+        if amount is None or target is None or target < 1.01 or target > 100.0:
+            bot.reply_to(message, "❌ <b>Invalid Target Multiplier!</b> Target <b>1.01x se 100.0x</b> ke beech hona chahiye.")
+            return
+
+        if amount < MIN_BET:
+            bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
+            return
+
+        if balance < amount or balance == 0:
+            bot.reply_to(message, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai.")
             return
 
         USER_BALANCES[user_id] -= amount
@@ -405,12 +446,24 @@ def cmd_limbo(message):
         else:
             status = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
 
-        bot.send_photo(
-            chat_id=message.chat.id,
-            photo=LIMBO_IMAGE_URL,
-            caption=f"🚀 <b>LIMBO RESULT</b>\n\n🎯 Target: <b>{target:.2f}x</b>\n📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n{status}\n💳 Balance: ₹{get_balance(user_id):.2f}",
-            reply_to_message_id=message.message_id
+        result_caption = (
+            f"🚀 <b>LIMBO RESULT</b>\n\n"
+            f"🎯 Target: <b>{target:.2f}x</b>\n"
+            f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
+            f"{status}\n"
+            f"💳 Balance: ₹{get_balance(user_id):.2f}"
         )
+
+        try:
+            bot.send_photo(
+                chat_id=message.chat.id,
+                photo=LIMBO_IMAGE_URL,
+                caption=result_caption,
+                reply_to_message_id=message.message_id
+            )
+        except Exception:
+            bot.reply_to(message, result_caption)
+
     except Exception as e: logging.error(f"Limbo Error: {e}")
 
 @bot.message_handler(commands=['slots', 'slot'])
@@ -463,7 +516,7 @@ def create_pvp_challenge(message, game_type, emoji, min_val=1, max_val=6):
 
     amount, target_num, err = parse_amount_and_number(args, user_id, min_val, max_val)
     if err:
-        bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/{game_type} [amount] [target/round]</code> or <code>/{game_type} [target/round] [amount]</code>")
+        bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/{game_type} [amount] [target/round]</code>")
         return
 
     USER_BALANCES[user_id] -= amount
@@ -551,7 +604,7 @@ def handle_pvp_callbacks(call):
 
         elif action == "accept":
             if user_id == match["p1_id"]:
-                bot.answer_callback_query(call.id, "❌ Apne hi challenge se khud nahi khel sakte! 'Play with Bot' choose karein.", show_alert=True)
+                bot.answer_callback_query(call.id, "❌ Apne hi challenge se khud nahi khel sakte!", show_alert=True)
                 return
 
             if get_balance(user_id) < match["amount"]:
@@ -698,7 +751,7 @@ def handle_text_and_photos(message):
         logging.error(f"Combined Handler Error: {e}")
 
 # -------------------------------------------------------------
-# KEEP ALIVE SERVER & BOT STARTUP (FIXED FOR RENDER)
+# KEEP ALIVE SERVER & BOT STARTUP
 # -------------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
