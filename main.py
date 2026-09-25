@@ -4,13 +4,14 @@ import random
 import time
 import threading
 import logging
+import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logging.basicConfig(level=logging.INFO)
 
 # -------------------------------------------------------------
-# CONFIGURATION (NEW TOKEN UPDATED HERE)
+# CONFIGURATION
 # -------------------------------------------------------------
 BOT_TOKEN = "8728557922:AAHjK4W2kxTAWhFnSEBAmA1Soj_wov3C1Kk"
 ADMIN_ID = 7995159553
@@ -25,7 +26,10 @@ LIMBO_IMAGE_URL = "https://img.freepik.com/free-vector/rocket-launch-concept-ill
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=False)
 
 USER_BALANCES = {}
+USER_UPI_IDS = {}        # Saved UPI IDs {user_id: "upi@id"}
+USER_WAITING_STATE = {}   # To track if waiting for UPI input or Amount input
 PVP_MATCHES = {}
+PENDING_WITHDRAWALS = {}
 
 BOT_ACTIVE = True
 
@@ -52,7 +56,6 @@ def is_bot_active(message_or_call):
     return True
 
 def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
-    """ FLEXIBLE PARSER: Swaps amount and rounds/target automatically """
     if len(args) < 1:
         return None, None, "⚠️ Amount aur Round/Target mention karein!"
 
@@ -139,6 +142,229 @@ def parse_amount_and_choice(args, user_id, valid_choices=None):
         return None, None, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai."
 
     return amount, choice, None
+
+# -------------------------------------------------------------
+# DEPOSIT (WITH SCREENSHOT) & BUTTON-BASED WITHDRAWAL
+# -------------------------------------------------------------
+@bot.message_handler(commands=['deposit', 'dep'])
+def cmd_deposit(message):
+    try:
+        if not is_bot_active(message): return
+        args = message.text.split()[1:]
+        if not args:
+            bot.reply_to(message, "⚠️ Usage: <code>/deposit amount</code>\nExample: <code>/deposit 500</code>")
+            return
+
+        try:
+            amount = float(args[0])
+            if amount < 10:
+                bot.reply_to(message, "❌ Minimum deposit ₹10 hai!")
+                return
+        except ValueError:
+            bot.reply_to(message, "❌ Valid amount enter karein!")
+            return
+
+        user_id = message.from_user.id
+        note = f"Dep_{user_id}_{int(time.time())}"
+        upi_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(BOT_NAME)}&am={amount:.2f}&cu=INR&tn={note}"
+        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
+
+        caption = (
+            f"💳 <b>DEPOSIT REQUEST</b>\n\n"
+            f"💰 <b>Amount:</b> ₹{amount:.2f}\n"
+            f"📍 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
+            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
+            f"📸 <b>INSTRUCTIONS:</b>\n"
+            f"1. QR Code scan karke ₹{amount:.2f} pay karein.\n"
+            f"2. Payment hone ke baad <b>Payment Screenshot</b> is bot ko chat me bhej dein!\n"
+            f"3. Screenshot aate hi Admin verify karke wallet me balance add kar dega."
+        )
+
+        bot.send_photo(message.chat.id, photo=qr_api_url, caption=caption, reply_to_message_id=message.message_id)
+    except Exception as e:
+        logging.error(f"Deposit Error: {e}")
+
+# SCREENSHOT HANDLER
+@bot.message_handler(content_types=['photo'])
+def handle_payment_screenshot(message):
+    try:
+        if message.chat.type != "private": return
+        user_id = message.from_user.id
+        user_name = message.from_user.full_name
+
+        bot.reply_to(message, "✅ <b>Payment Screenshot Received!</b>\n\nAdmin ko verify karne ke liye bhej diya gaya hai. Kuch hi minutes me balance add ho jayega.")
+        
+        caption = (
+            f"📸 <b>NEW DEPOSIT SCREENSHOT!</b>\n\n"
+            f"👤 <b>User:</b> {user_name} (@{message.from_user.username or 'NoUsername'})\n"
+            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
+            f"<b>Quick Add Balance:</b>\n"
+            f"<code>/addbal {user_id} AMOUNT</code>"
+        )
+
+        bot.send_photo(ADMIN_ID, photo=message.photo[-1].file_id, caption=caption)
+
+    except Exception as e:
+        logging.error(f"Screenshot Error: {e}")
+
+# --- NEW BUTTON-BASED WITHDRAWAL MENU ---
+@bot.message_handler(commands=['withdraw', 'wd'])
+def cmd_withdraw_menu(message):
+    try:
+        if not is_bot_active(message): return
+        user_id = message.from_user.id
+        saved_upi = USER_UPI_IDS.get(user_id, "<i>Not Set</i>")
+        balance = get_balance(user_id)
+
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📍 Set / Change UPI ID", callback_data="wd_set_upi"))
+        markup.add(InlineKeyboardButton("💸 Withdraw Money", callback_data="wd_process_req"))
+
+        text = (
+            f"🏦 <b>WITHDRAWAL DASHBOARD</b>\n\n"
+            f"💳 <b>Wallet Balance:</b> ₹{balance:.2f}\n"
+            f"📍 <b>Saved UPI ID:</b> <code>{saved_upi}</code>\n\n"
+            f"👇 Neeche diye gaye buttons par click karein:"
+        )
+
+        bot.reply_to(message, text, reply_markup=markup)
+    except Exception as e:
+        logging.error(f"WD Menu Error: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data in ["wd_set_upi", "wd_process_req"])
+def handle_withdrawal_buttons(call):
+    try:
+        if not is_bot_active(call): return
+        user_id = call.from_user.id
+
+        if call.data == "wd_set_upi":
+            USER_WAITING_STATE[user_id] = "WAITING_FOR_UPI"
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, "✏️ <b>Apna UPI ID type karke chat me bhejein:</b>\n(Example: <code>9876543210@paytm</code> ya <code>name@upi</code>)")
+
+        elif call.data == "wd_process_req":
+            saved_upi = USER_UPI_IDS.get(user_id)
+            if not saved_upi:
+                bot.answer_callback_query(call.id, "❌ Pehle 'Set UPI ID' button daba kar UPI ID save karein!", show_alert=True)
+                return
+
+            balance = get_balance(user_id)
+            if balance < 50:
+                bot.answer_callback_query(call.id, "❌ Minimum withdrawal ₹50 hai!", show_alert=True)
+                return
+
+            USER_WAITING_STATE[user_id] = "WAITING_FOR_WD_AMOUNT"
+            bot.answer_callback_query(call.id)
+            bot.send_message(
+                call.message.chat.id,
+                f"💵 <b>Withdrawal Amount Enter Karein:</b>\n\n"
+                f"💳 Balance: ₹{balance:.2f}\n"
+                f"📍 UPI ID: <code>{saved_upi}</code>\n\n"
+                f"<i>Jitna withdraw karna hai woh amount type karke chat me bhejein (Min: ₹50).</i>"
+            )
+
+    except Exception as e:
+        logging.error(f"WD Button Error: {e}")
+
+# TEXT INPUT HANDLER FOR UPI & WITHDRAWAL AMOUNT
+@bot.message_handler(func=lambda message: message.from_user.id in USER_WAITING_STATE)
+def handle_user_input_states(message):
+    try:
+        user_id = message.from_user.id
+        state = USER_WAITING_STATE.get(user_id)
+
+        if state == "WAITING_FOR_UPI":
+            upi_input = message.text.strip()
+            if "@" not in upi_input or len(upi_input) < 5:
+                bot.reply_to(message, "❌ Valid UPI ID enter karein! (e.g. <code>9876543210@paytm</code>)")
+                return
+
+            USER_UPI_IDS[user_id] = upi_input
+            del USER_WAITING_STATE[user_id]
+
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("💸 Withdraw Money Now", callback_data="wd_process_req"))
+            bot.reply_to(message, f"✅ <b>UPI ID Saved Successfully!</b>\n\n📍 UPI ID: <code>{upi_input}</code>", reply_markup=markup)
+
+        elif state == "WAITING_FOR_WD_AMOUNT":
+            try:
+                amount = float(message.text.strip())
+            except ValueError:
+                bot.reply_to(message, "❌ Kripya numeric amount type karein (e.g., 500)!")
+                return
+
+            balance = get_balance(user_id)
+            if amount < 50:
+                bot.reply_to(message, "❌ Minimum withdrawal ₹50 hai!")
+                return
+            if balance < amount:
+                bot.reply_to(message, f"❌ Insufficient Balance! Aapka balance ₹{balance:.2f} hai.")
+                return
+
+            upi_details = USER_UPI_IDS.get(user_id)
+            USER_BALANCES[user_id] -= amount
+            del USER_WAITING_STATE[user_id]
+
+            wd_id = f"wd_{user_id}_{int(time.time())}"
+            PENDING_WITHDRAWALS[wd_id] = {
+                "user_id": user_id,
+                "user_name": message.from_user.full_name,
+                "amount": amount,
+                "upi": upi_details
+            }
+
+            # Reply to User
+            bot.reply_to(message, f"✅ <b>Withdrawal Request Submitted!</b>\n\n💰 Amount: ₹{amount:.2f}\n📍 UPI: <code>{upi_details}</code>\n⏳ Status: Pending Admin Approval")
+
+            # Alert Admin
+            markup = InlineKeyboardMarkup()
+            markup.add(
+                InlineKeyboardButton("✅ Approve", callback_data=f"wd_app_{wd_id}"),
+                InlineKeyboardButton("❌ Reject & Refund", callback_data=f"wd_rej_{wd_id}")
+            )
+
+            bot.send_message(
+                ADMIN_ID,
+                f"🚨 <b>NEW WITHDRAWAL REQUEST!</b>\n\n"
+                f"👤 <b>User:</b> {message.from_user.full_name} (<code>{user_id}</code>)\n"
+                f"💰 <b>Amount:</b> ₹{amount:.2f}\n"
+                f"📍 <b>UPI/Details:</b> <code>{upi_details}</code>\n"
+                f"🆔 <b>Request ID:</b> <code>{wd_id}</code>",
+                reply_markup=markup
+            )
+
+    except Exception as e:
+        logging.error(f"Input State Error: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("wd_app_") or call.data.startswith("wd_rej_"))
+def handle_withdrawal_approval(call):
+    try:
+        if call.from_user.id != ADMIN_ID: return
+        data = call.data.split("_")
+        action = data[1]
+        wd_id = "_".join(data[2:])
+
+        if wd_id not in PENDING_WITHDRAWALS:
+            bot.answer_callback_query(call.id, "❌ Request pehle hi process ho chuki hai!", show_alert=True)
+            return
+
+        wd_data = PENDING_WITHDRAWALS[wd_id]
+        u_id = wd_data["user_id"]
+        amt = wd_data["amount"]
+
+        if action == "app":
+            bot.edit_message_text(f"✅ <b>WITHDRAWAL APPROVED!</b>\n👤 User: {wd_data['user_name']}\n💰 Amount: ₹{amt:.2f}\n📍 UPI: {wd_data['upi']}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            bot.send_message(u_id, f"🎉 <b>WITHDRAWAL SUCCESSFUL!</b>\n\n💰 ₹{amt:.2f} aapke UPI ID (<code>{wd_data['upi']}</code>) par bhej diye gaye hain.")
+        
+        elif action == "rej":
+            USER_BALANCES[u_id] = get_balance(u_id) + amt
+            bot.edit_message_text(f"❌ <b>WITHDRAWAL REJECTED!</b>\n💰 ₹{amt:.2f} refunded to user balance.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            bot.send_message(u_id, f"❌ <b>WITHDRAWAL REJECTED!</b>\n\n💰 ₹{amt:.2f} aapke wallet me refund kar diye gaye hain.")
+
+        del PENDING_WITHDRAWALS[wd_id]
+
+    except Exception as e:
+        logging.error(f"WD Approval Error: {e}")
 
 # -------------------------------------------------------------
 # START & ADMIN COMMANDS
@@ -453,17 +679,20 @@ def send_games_list(message):
     if not is_bot_active(message): return
     bot.reply_to(
         message, 
-        f"🎰 <b>{BOT_NAME} GAMES MENU</b> 🎰\n\n"
-        f"⚔️ <b>PVP / BOT GAMES (Group / Solo vs Bot):</b>\n"
-        f"🎲 <b>Dice:</b> <code>/dice 100 4</code> or <code>/dice 4 100</code>\n"
+        f"🎰 <b>{BOT_NAME} MENU</b> 🎰\n\n"
+        f"💳 <b>FINANCE COMMANDS:</b>\n"
+        f"➕ <b>Deposit:</b> <code>/deposit amount</code>\n"
+        f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
+        f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n\n"
+        f"⚔️ <b>PVP / BOT GAMES:</b>\n"
+        f"🎲 <b>Dice:</b> <code>/dice 100 4</code>\n"
         f"🎳 <b>Bowling:</b> <code>/bowl 100 6</code>\n"
         f"🏀 <b>Basketball:</b> <code>/basketball 100 4</code>\n"
-        f"🎯 <b>Dart:</b> <code>/dart 100 5</code> or <code>/dart 5 100</code>\n\n"
+        f"🎯 <b>Dart:</b> <code>/dart 100 5</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
         f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code>\n"
         f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code>\n"
-        f"🎰 <b>Slots:</b> <code>/slots 100 3</code> or <code>/slots 3 100</code>\n\n"
-        f"💳 <b>Wallet:</b> <code>/wallet</code>"
+        f"🎰 <b>Slots:</b> <code>/slots 100 3</code>"
     )
 
 @bot.message_handler(commands=['wallet', 'bal'])
@@ -480,6 +709,9 @@ def admin_add_balance(message):
         target_id, amount = int(args[1]), float(args[2])
         USER_BALANCES[target_id] = get_balance(target_id) + amount
         bot.reply_to(message, f"✅ Added ₹{amount:.2f} to <code>{target_id}</code>")
+        try:
+            bot.send_message(target_id, f"🎉 <b>₹{amount:.2f} credited to your wallet!</b>\n💳 Current Balance: ₹{get_balance(target_id):.2f}")
+        except Exception: pass
     except Exception:
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
