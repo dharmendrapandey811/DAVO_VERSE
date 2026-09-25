@@ -10,9 +10,9 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 logging.basicConfig(level=logging.INFO)
 
 # -------------------------------------------------------------
-# CONFIGURATION
+# CONFIGURATION (NEW TOKEN UPDATED HERE)
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAH3RJ01xzFW82o058-SwPLOfqdmABGDJHQ"
+BOT_TOKEN = "8728557922:AAHjK4W2kxTAWhFnSEBAmA1Soj_wov3C1Kk"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -63,7 +63,6 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
     amount = None
     target_num = None
 
-    # Try parsing val1 as target, val2 as amount OR vice versa
     for v in [val1, val2]:
         if v == "all":
             amount = balance
@@ -77,7 +76,6 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
             except ValueError:
                 pass
 
-    # Fallback assignment if parsing logic missed target or amount
     if amount is None or target_num is None:
         try:
             if val1 == "all":
@@ -259,7 +257,6 @@ def cmd_slots(message):
         user_id = message.from_user.id
         args = message.text.split()[1:]
 
-        # FLEXIBLE ARGUMENT SUPPORT: /slots amount rounds OR /slots rounds amount
         amount, rounds, err = parse_amount_and_number(args, user_id, min_num=1, max_num=10)
         if err:
             bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/slots 100 3</code> ya <code>/slots 3 100</code>")
@@ -296,7 +293,7 @@ def cmd_slots(message):
     except Exception as e: logging.error(f"Slots Error: {e}")
 
 # -------------------------------------------------------------
-# PvP & BOT GAMES (/dice, /bowl, /basketball, /dart)
+# PVP & BOT GAMES (/dice, /bowl, /basketball, /dart)
 # -------------------------------------------------------------
 def create_pvp_challenge(message, game_type, emoji, min_val=1, max_val=6):
     if not is_bot_active(message): return
@@ -415,13 +412,11 @@ def handle_pvp_callbacks(call):
             message_id=call.message.message_id
         )
 
-        # Player 1 Roll
         bot.send_message(call.message.chat.id, f"🔴 <b>{match['p1_name']}</b> rolling...")
         m1 = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
         r1 = m1.dice.value
         time.sleep(2.5)
 
-        # Player 2 / Bot Roll
         bot.send_message(call.message.chat.id, f"🔵 <b>{match['p2_name']}</b> rolling...")
         m2 = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
         r2 = m2.dice.value
