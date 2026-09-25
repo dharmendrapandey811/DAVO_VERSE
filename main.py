@@ -5,6 +5,7 @@ import time
 import threading
 import logging
 import urllib.parse
+import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -21,8 +22,15 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
-# Nayi Limbo Rocket Image URL
+# Limbo Rocket Image URL
 LIMBO_IMAGE_URL = "https://i.postimg.cc/m2mYv63Z/1000449482.png"
+
+# Startup par purane connections clear karne ke liye
+try:
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=5)
+    logging.info("Cleaned pending webhooks successfully.")
+except Exception as e:
+    logging.warning(f"Failed to clear webhook: {e}")
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML", threaded=False)
 
@@ -717,13 +725,17 @@ def check_wallet(message):
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
 
 # -------------------------------------------------------------
-# KEEP ALIVE SERVER & LOOP
+# KEEP ALIVE SERVER (FIXES RENDER HEAD 501 ERROR)
 # -------------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"DAVO CASINO BOT ONLINE")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -733,9 +745,11 @@ def run_web_server():
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     print("⚡ BOT STARTED!")
+    
+    # Render par duplicate polling conflict se bachne ke liye safe loop
     while True:
         try:
-            bot.polling(none_stop=True, interval=1, timeout=30)
+            bot.polling(none_stop=True, interval=2, timeout=30)
         except Exception as e:
-            logging.error(f"Polling Crashed: {e}")
-            time.sleep(3)
+            logging.error(f"Polling Exception handled: {e}")
+            time.sleep(5)
