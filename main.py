@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAHjK4W2kxTAWhFnSEBAmA1Soj_wov3C1Kk"
+BOT_TOKEN = "8728557922:AAEzmogNXltIKkbcILAiNMuvLKjcGjQAAqI"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -22,10 +22,10 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
-# Aapka diya gaya Limbo Image File ID yahan set hai
+# Aapka Limbo Rocket Image File ID
 LIMBO_IMAGE_URL = "AgACAgUAAxkBAAICKmq2gzs5GMIisCxAwPCiItZM6TElAALBE2sbz32wVfrsvGptNULkAQADAgADeQADPQQ"
 
-# Webhook clear on startup to avoid conflict issues temporarily
+# Webhook clear on startup to avoid conflict issues
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=5)
     logging.info("Cleaned pending webhooks successfully.")
@@ -659,18 +659,12 @@ def handle_pvp_callbacks(call):
         logging.error(f"PvP CB Error: {e}")
 
 # -------------------------------------------------------------
-# COMBINED INPUT HANDLER (TEXT & PHOTO) WITH FILE ID TOOL FOR ADMIN
+# COMBINED INPUT HANDLER (TEXT & PHOTO)
 # -------------------------------------------------------------
 @bot.message_handler(content_types=['text', 'photo'])
 def handle_text_and_photos(message):
     try:
         user_id = message.from_user.id
-
-        # Agar Admin ne photo bheji hai, toh bot uska File ID dega
-        if message.content_type == 'photo' and user_id == ADMIN_ID and message.chat.type == 'private':
-            file_id = message.photo[-1].file_id
-            bot.reply_to(message, f"📸 <b>Aapka File ID yeh raha:</b>\n<code>{file_id}</code>")
-            return
 
         if user_id in USER_WAITING_STATE:
             state = USER_WAITING_STATE.get(user_id)
