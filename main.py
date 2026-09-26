@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAFCGy0PgjcNUJ78bt7WOpbSd5xRvt7cJ10"
+BOT_TOKEN = "8728557922:AAHHcgpJSjVmZ7KUZwYNa8zT-hPMPzn78sg"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -447,12 +447,14 @@ def cmd_limbo(message):
             status_text = "WIN"
             payout_text = f"₹{payout:.2f}"
             color_status = (0, 255, 0)
+            status_caption = f"🎉 <b>TARGET HIT! (WIN)</b>\n💰 Won: ₹{payout:.2f}"
         else:
             status_text = "LOSS"
             payout_text = "₹0.00"
             color_status = (255, 0, 0)
+            status_caption = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
 
-        # Image ke upar text draw karne ki koshish (Pillow)
+        # Image ke upar text draw karna (Pillow with robust font fallbacks)
         try:
             file_info = bot.get_file(LIMBO_IMAGE_URL)
             downloaded_file = bot.download_file(file_info.file_path)
@@ -460,18 +462,22 @@ def cmd_limbo(message):
             img = Image.open(BytesIO(downloaded_file)).convert("RGB")
             draw = ImageDraw.Draw(img)
             
-            # Safe default font loading
-            try:
-                font_big = ImageFont.truetype("arial.ttf", 60)
-                font_small = ImageFont.truetype("arial.ttf", 26)
-            except IOError:
+            # Safe font loading for Linux/Cloud/Windows environments
+            font_big, font_small = None, None
+            for font_name in ["DejaVuSans-Bold.ttf", "arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
+                try:
+                    font_big = ImageFont.truetype(font_name, 55)
+                    font_small = ImageFont.truetype(font_name.replace("-Bold", ""), 24)
+                    break
+                except IOError:
+                    continue
+            
+            if font_big is None:
                 font_big = ImageFont.load_default()
                 font_small = ImageFont.load_default()
 
-            # Image ke center me Rolled Multiplier likhna
+            # Coordinates par text draw karna (Image ke andar)
             draw.text((360, 420), f"{actual_multiplier:.2f}x", fill=(255, 255, 255), font=font_big, anchor="mm")
-            
-            # Neeche boxes me values likhna (Coordinates)
             draw.text((200, 785), f"{target:.2f}x", fill=(255, 255, 255), font=font_small, anchor="mm")
             draw.text((500, 785), status_text, fill=color_status, font=font_small, anchor="mm")
             draw.text((800, 785), payout_text, fill=(255, 255, 255), font=font_small, anchor="mm")
@@ -481,20 +487,28 @@ def cmd_limbo(message):
             img.save(bio, 'PNG')
             bio.seek(0)
             
+            result_caption = (
+                f"🚀 <b>LIMBO RESULT</b>\n\n"
+                f"🎯 Target: <b>{target:.2f}x</b>\n"
+                f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
+                f"{status_caption}\n"
+                f"💳 Balance: ₹{get_balance(user_id):.2f}"
+            )
+            
             bot.send_photo(
                 chat_id=message.chat.id,
                 photo=bio,
-                caption=f"🚀 <b>LIMBO RESULT</b>\n💳 Balance: ₹{get_balance(user_id):.2f}",
+                caption=result_caption,
                 reply_to_message_id=message.message_id
             )
         except Exception as img_err:
             logging.error(f"Image Draw Error: {img_err}")
-            # Fallback agar draw fail ho jaye toh normal photo + caption
+            # Fallback agar drawing fail ho jaye toh normal photo + caption bhejega
             fallback_caption = (
                 f"🚀 <b>LIMBO RESULT</b>\n\n"
                 f"🎯 Target: <b>{target:.2f}x</b>\n"
                 f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
-                f"{'🎉 TARGET HIT!' if win else '💥 CRASHED!'}\n"
+                f"{status_caption}\n"
                 f"💳 Balance: ₹{get_balance(user_id):.2f}"
             )
             bot.send_photo(message.chat.id, photo=LIMBO_IMAGE_URL, caption=fallback_caption, reply_to_message_id=message.message_id)
