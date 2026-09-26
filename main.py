@@ -875,16 +875,17 @@ def handle_game_dice(message):
             bot.reply_to(message, f"🎲 {match['p1_name']} Throw (Round {current_r}/{match['rounds']})\n👉 Agla throw karein!")
         else:
             if match["mode"] == "bot":
-                bot.reply_to(message, f"✅ <b>{match['p1_name']} ke saare rounds poore ho gaye!</b>\n🤖 Ab Bot apna daan chal raha hai...")
+                bot.reply_to(message, f"✅ <b>{match['p1_name']} ke saare rounds poore ho gaye!</b>\n🤖 Ab Bot apna animation ke sath throw kar raha hai...")
                 del ACTIVE_GAME_SESSIONS[user_id]
                 
                 time.sleep(1.5)
                 for r in range(1, match["rounds"] + 1):
-                    max_val = 6 if match["emoji"] in ["🎲", "🎳"] else 5
-                    b_score = random.randint(1, max_val)
-                    bot.send_message(chat_id, f"🤖 <b>{match['p2_name']} Throw (Round {r}/{match['rounds']})</b> -> Score: {b_score}")
+                    # Bot throws dice/animation directly into the chat like a real player
+                    bot.send_message(chat_id, f"🤖 <b>{match['p2_name']} Throw (Round {r}/{match['rounds']})</b>")
+                    sent_bot_dice = bot.send_dice(chat_id, emoji=match["emoji"])
+                    b_score = sent_bot_dice.dice.value
                     match["p2_scores"].append(b_score)
-                    time.sleep(1.2)
+                    time.sleep(3.5) # Wait for animation to complete
 
                 p1_total = sum(match["p1_scores"])
                 p2_total = sum(match["p2_scores"])
