@@ -141,6 +141,234 @@ def admin_add_balance(message):
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
 # -------------------------------------------------------------
+# BOT FUND (/hb)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['hb'])
+def send_bot_fund(message):
+    bot.reply_to(
+        message,
+        "❄Bot Fund = 1,471,81\n"
+        "🏛 Bet active! \n"
+        "🧿 Davo Verse"
+    )
+
+# -------------------------------------------------------------
+# DEPOSIT & WITHDRAWAL SYSTEM
+# -------------------------------------------------------------
+@bot.message_handler(commands=['deposit'])
+def cmd_deposit(message):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("📥 Enter Deposit Amount", callback_data="dep_amount"))
+    
+    bot.reply_to(
+        message,
+        f"💳 <b>DEPOSIT MONEY</b>\n\n"
+        f"📍 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
+        f"📲 Niche diye gaye button par click karke amount enter karein aur payment karke receipt bhejein.",
+        reply_markup=markup
+    )
+
+@bot.message_handler(commands=['withdraw'])
+def cmd_withdraw(message):
+    user_id = message.from_user.id
+    current_upi = USER_UPI_IDS.get(user_id, "Not Set")
+    
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("✏️ Set / Change UPI", callback_data="wd_set_upi"),
+        InlineKeyboardButton("📤 Withdraw Amount", callback_data="wd_amount")
+    )
+    
+    bot.reply_to(
+        message,
+        f"💸 <b>WITHDRAWAL PANEL</b>\n\n"
+        f"💳 Your Saved UPI: <code>{current_upi}</code>\n"
+        f"💰 Balance: ₹{get_balance(user_id):.2f}\n\n"
+        f"Apna UPI set karne ya withdraw karne ke liye niche buttons ka use karein:",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data in ["dep_amount", "wd_set_upi", "wd_amount"])
+def handle_wallet_callbacks(call):
+    user_id = call.from_user.id
+    if call.data == "dep_amount":
+        USER_WAITING_STATE[user_id] = "waiting_deposit"
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "📥 Kitna deposit karna hai? Amount type karke bhejein (jaise: <code>500</code>):")
+    elif call.data == "wd_set_upi":
+        USER_WAITING_STATE[user_id] = "waiting_upi"
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "✏️ Apna sahi UPI ID type karke bhejein (jaise: <code>username@okhdfcbank</code>):")
+    elif call.data == "wd_amount":
+        if user_id not in USER_UPI_IDS:
+            bot.answer_callback_query(call.id, "❌ Pehle apna UPI ID set karein!", show_alert=True)
+            return
+        USER_WAITING_STATE[user_id] = "waiting_withdraw"
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, f"📤 Kitna amount withdraw karna hai? (Balance: ₹{get_balance(user_id):.2f}):")
+
+# -------------------------------------------------------------
+# ESCROW & TIP SYSTEM (Reply to message)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['escrow'])
+def cmd_escrow(message):
+    try:
+        if not message.reply_to_message:
+            bot.reply_to(message, "⚠️ Kripya kisi user ke message par reply karke likhein: <code>/escrow 50</code>")
+            return
+        
+        args = message.text.split()
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Usage: <code>/escrow 50</code> (kisi ke message par reply karke)")
+            return
+            
+        amount = float(args[1])
+        sender_id = message.from_user.id
+        receiver_id = message.reply_to_message.from_user.id
+        receiver_name = message.reply_to_message.from_user.first_name
+
+        if sender_id == receiver_id:
+            bot.reply_to(message, "❌ Aap khud ke sath escrow nahi kar sakte!")
+            return
+        if get_balance(sender_id) < amount:
+            bot.reply_to(message, "❌ Aapke wallet me itna balance nahi hai!")
+            return
+
+        USER_BALANCES[sender_id] -= amount
+        deal_id = f"escrow_{int(time.time())}"
+        ESCROW_DEALS[deal_id] = {
+            "sender": sender_id,
+            "receiver": receiver_id,
+            "amount": amount
+        }
+
+        markup = InlineKeyboardMarkup()
+        markup.add(
+            InlineKeyboardButton("✅ Release", callback_data=f"esc_rel_{deal_id}"),
+            InlineKeyboardButton("❌ Refund", callback_data=f"esc_ref_{deal_id}")
+        )
+
+        bot.reply_to(
+            message,
+            f"🤝 <b>ESCROW CREATED!</b>\n\n"
+            f"👤 From: {message.from_user.first_name}\n"
+            f"👤 To: {receiver_name}\n"
+            f"💰 Amount: ₹{amount:.2f}\n\n"
+            f"<i>Paisa hold par hai. Kaam hone par Release ya Refund karein.</i>",
+            reply_markup=markup
+        )
+    except Exception as e:
+        logging.error(f"Escrow Error: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("esc_"))
+def handle_escrow_callbacks(call):
+    data = call.data.split("_")
+    action = data[1]
+    deal_id = "_".join(data[2:])
+    user_id = call.from_user.id
+
+    if deal_id not in ESCROW_DEALS:
+        bot.answer_callback_query(call.id, "❌ Deal expired or completed!", show_alert=True)
+        return
+
+    deal = ESCROW_DEALS[deal_id]
+    if user_id != deal["sender"] and user_id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ Sirf sender ya admin yeh action le sakta hai!", show_alert=True)
+        return
+
+    if action == "rel":
+        USER_BALANCES[deal["receiver"]] = get_balance(deal["receiver"]) + deal["amount"]
+        bot.edit_message_text(f"✅ <b>ESCROW RELEASED!</b>\n💰 ₹{deal['amount']:.2f} successfully transferred.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+    else:
+        USER_BALANCES[deal["sender"]] = get_balance(deal["sender"]) + deal["amount"]
+        bot.edit_message_text(f"❌ <b>ESCROW REFUNDED!</b>\n💰 ₹{deal['amount']:.2f} returned to sender.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+    
+    del ESCROW_DEALS[deal_id]
+
+@bot.message_handler(commands=['tip'])
+def cmd_tip(message):
+    try:
+        if not message.reply_to_message:
+            bot.reply_to(message, "⚠️ Kripya kisi ke message par reply karke <code>/tip 50</code> likhein!")
+            return
+            
+        args = message.text.split()
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Usage: <code>/tip 50</code> (reply karke)")
+            return
+            
+        amount = float(args[1])
+        sender_id = message.from_user.id
+        receiver_id = message.reply_to_message.from_user.id
+        receiver_name = message.reply_to_message.from_user.first_name
+
+        if sender_id == receiver_id:
+            bot.reply_to(message, "❌ Khud ko tip nahi de sakte!")
+            return
+        if get_balance(sender_id) < amount:
+            bot.reply_to(message, "❌ Insufficient balance for tip!")
+            return
+
+        USER_BALANCES[sender_id] -= amount
+        USER_BALANCES[receiver_id] = get_balance(receiver_id) + amount
+
+        bot.reply_to(
+            message,
+            f"🎁 <b>TIP SUCCESSFUL!</b>\n\n"
+            f"👤 From: {message.from_user.first_name}\n"
+            f"👤 To: {receiver_name}\n"
+            f"💰 Amount: <b>₹{amount:.2f}</b> sent!"
+        )
+    except Exception as e:
+        logging.error(f"Tip Error: {e}")
+
+# -------------------------------------------------------------
+# TEXT INPUT HANDLER (For Deposit, Withdraw & UPI Setting)
+# -------------------------------------------------------------
+@bot.message_handler(func=lambda msg: msg.from_user.id in USER_WAITING_STATE)
+def handle_text_inputs(message):
+    user_id = message.from_user.id
+    state = USER_WAITING_STATE[user_id]
+    text = message.text.strip()
+
+    if state == "waiting_upi":
+        USER_UPI_IDS[user_id] = text
+        del USER_WAITING_STATE[user_id]
+        bot.reply_to(message, f"✅ <b>UPI saved successfully!</b>\n💳 UPI: <code>{text}</code>")
+
+    elif state == "waiting_deposit":
+        try:
+            amount = float(text)
+            del USER_WAITING_STATE[user_id]
+            bot.reply_to(
+                message,
+                f"📥 <b>DEPOSIT REQUEST REGISTERED</b>\n\n"
+                f"💰 Amount: ₹{amount:.2f}\n"
+                f"📍 Send payment to UPI: <code>{UPI_ID}</code>\n\n"
+                f"⚠️ <i>Payment karne ke baad payment ki screenshot/receipt yahin chat mein bhej dein taaki admin approve kar sake.</i>"
+            )
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid amount! Sahi number type karein.")
+
+    elif state == "waiting_withdraw":
+        try:
+            amount = float(text)
+            del USER_WAITING_STATE[user_id]
+            balance = get_balance(user_id)
+            if amount < 50:
+                bot.reply_to(message, "❌ Minimum withdrawal ₹50 hai!")
+                return
+            if balance < amount:
+                bot.reply_to(message, "❌ Insufficient balance!")
+                return
+            
+            USER_BALANCES[user_id] -= amount
+            upi = USER_UPI_IDS.get(user_id)
+            bot.reply_to(message, f"📤 <b>Withdrawal Request Placed!</b>\n💰 Amount: ₹{amount:.2f}\n💳 UPI: <code>{upi}</code>\n⏳ Admin jald hi transfer kar dega.")
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid amount!")
+
+# -------------------------------------------------------------
 # MENU & WALLET SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
@@ -148,8 +376,9 @@ def send_games_list(message):
     bot.reply_to(
         message, 
         f"🎰 <b>{BOT_NAME} MENU</b> 🎰\n\n"
-        f"💳 <b>WALLET:</b>\n"
-        f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n\n"
+        f"💳 <b>WALLET & BANKING:</b>\n"
+        f"💳 Balance: <code>/wallet</code> | Deposit: <code>/deposit</code> | Withdraw: <code>/withdraw</code>\n"
+        f"❄️ Bot Fund: <code>/hb</code> | Escrow: <code>/escrow 50</code> | Tip: <code>/tip 50</code>\n\n"
         f"⚔️ <b>PVP / BOT GAMES (Turn-by-turn Manual Throw):</b>\n"
         f"🎲 <b>Dice:</b> <code>/dice 100</code>\n"
         f"🎳 <b>Bowling:</b> <code>/bowl 100</code>\n"
@@ -167,7 +396,7 @@ def check_wallet(message):
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
 
 # -------------------------------------------------------------
-# SOLO GAMES (/dr, /limbo, /slots) WITH UPDATED LIMBO RULE
+# SOLO GAMES (/dr, /limbo, /slots)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['dr', 'dicerush'])
 def cmd_dice_rush(message):
@@ -243,7 +472,6 @@ def cmd_limbo(message):
         
         USER_BALANCES[user_id] -= amount
 
-        # NEW RULE: If bet amount > 20, force crash before target
         if amount > 20.0:
             if target > 1.01:
                 actual_multiplier = round(random.uniform(1.00, target - 0.01), 2)
