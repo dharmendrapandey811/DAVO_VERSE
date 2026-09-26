@@ -143,14 +143,17 @@ def admin_add_balance(message):
 # -------------------------------------------------------------
 # BOT FUND (/hb)
 # -------------------------------------------------------------
+# BOT FUND (/hb)
+# -------------------------------------------------------------
 @bot.message_handler(commands=['hb'])
 def send_bot_fund(message):
     bot.reply_to(
         message,
-        "❄Bot Fund = 1,471,81\n"
-        "🏛 Bet active! \n"
-        "🧿 Davo Verse"
+        "<b>❄️ Bot Fund = $1,471.81</b>\n"
+        "<b>🏛 Bet active!</b>\n"
+        "<b>🧿 Davo Verse</b>"
     )
+
 
 # -------------------------------------------------------------
 # DEPOSIT & WITHDRAWAL SYSTEM
