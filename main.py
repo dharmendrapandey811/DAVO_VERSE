@@ -187,17 +187,18 @@ def admin_add_balance(message):
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
 # -------------------------------------------------------------
-# MENU, WALLET & BOT FUND
+# MENU, WALLET & TIP SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
 def send_games_list(message):
     bot.reply_to(
         message, 
         f"🎰 <b>{BOT_NAME} MENU</b> 🎰\n\n"
-        f"💳 <b>FINANCE COMMANDS:</b>\n"
+        f"💳 <b>FINANCE & TRANSFER:</b>\n"
         f"➕ <b>Deposit:</b> <code>/deposit amount</code>\n"
         f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
         f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n"
+        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code> (Ya kisi ke message par reply karke <code>50</code> likhein)\n"
         f"🏦 <b>Bot Fund:</b> <code>/hb</code>\n\n"
         f"⚔️ <b>PVP / BOT GAMES:</b>\n"
         f"🎲 <b>Dice:</b> <code>/dice 100 4</code>\n"
@@ -214,6 +215,70 @@ def send_games_list(message):
 def check_wallet(message):
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
+
+@bot.message_handler(commands=['tip'])
+def cmd_tip(message):
+    try:
+        user_id = message.from_user.id
+        args = message.text.split()[1:]
+        target_id = None
+        amount = None
+
+        # Agar kisi ke message par reply kiya hai
+        if message.reply_to_message:
+            target_id = message.reply_to_message.from_user.id
+            if len(args) > 0:
+                try:
+                    amount = float(args[0])
+                except ValueError:
+                    pass
+        elif len(args) >= 2:
+            try:
+                target_id = int(args[0])
+                amount = float(args[1])
+            except ValueError:
+                pass
+
+        if not target_id or amount is None or amount <= 0:
+            bot.reply_to(message, "⚠️ <b>Usage:</b>\n1. Kisi ke message par reply karke likhein: <code>/tip 50</code> ya sirf <code>50</code>\n2. Direct likhein: <code>/tip user_id amount</code>")
+            return
+
+        if target_id == user_id:
+            bot.reply_to(message, "❌ Aap khud ko tip nahi bhej sakte!")
+            return
+
+        sender_bal = get_balance(user_id)
+        if sender_bal < amount:
+            bot.reply_to(message, f"❌ Aapke wallet me itna balance nahi hai! Current Balance: ₹{sender_bal:.2f}")
+            return
+
+        # Balance transfer
+        USER_BALANCES[user_id] -= amount
+        USER_BALANCES[target_id] = get_balance(target_id) + amount
+
+        target_name = message.reply_to_message.from_user.first_name if message.reply_to_message else f"User {target_id}"
+
+        bot.reply_to(
+            message,
+            f"🎁 <b>TIP SUCCESSFUL!</b>\n\n"
+            f"👤 To: <b>{target_name}</b> (<code>{target_id}</code>)\n"
+            f"💰 Amount: <b>₹{amount:.2f}</b>\n"
+            f"💳 Your New Balance: <b>₹{get_balance(user_id):.2f}</b>"
+        )
+
+        try:
+            bot.send_message(
+                target_id,
+                f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
+                f"👤 From: <b>{message.from_user.first_name}</b>\n"
+                f"💰 Amount: <b>₹{amount:.2f}</b>\n"
+                f"💳 New Balance: <b>₹{get_balance(target_id):.2f}</b>"
+            )
+        except Exception:
+            pass
+
+    except Exception as e:
+        logging.error(f"Tip Error: {e}")
 
 @bot.message_handler(commands=['hb', 'botfund'])
 def cmd_bot_fund(message):
@@ -439,15 +504,12 @@ def cmd_limbo(message):
         USER_BALANCES[user_id] -= amount
 
         # --- RIGGED LIMBO LOGIC ---
-        # Agar amount 100 ya usse zyada hai, toh actual multiplier target se kam (ya 2.0x ke andar) hi rahega taaki user hamesha lose kare
         if amount >= 100.0:
-            # Target se kam ya 1.01 se target ke beech random crash karayenge
             if target > 1.01:
                 actual_multiplier = round(random.uniform(1.01, target - 0.01), 2)
             else:
                 actual_multiplier = 1.00
         else:
-            # Chote amounts ke liye normal random
             actual_multiplier = round(random.uniform(1.00, 4.00) + (random.randint(1, 6) * 0.4), 2)
 
         win = actual_multiplier >= target
@@ -465,7 +527,6 @@ def cmd_limbo(message):
             color_status = (255, 0, 0)
             status_caption = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
 
-        # Image ke upar text draw karna (Centered)
         try:
             file_info = bot.get_file(LIMBO_IMAGE_URL)
             downloaded_file = bot.download_file(file_info.file_path)
@@ -473,7 +534,6 @@ def cmd_limbo(message):
             img = Image.open(BytesIO(downloaded_file)).convert("RGB")
             draw = ImageDraw.Draw(img)
             
-            # Safe font loading
             font_big, font_small = None, None
             for font_name in ["DejaVuSans-Bold.ttf", "arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
                 try:
@@ -487,10 +547,7 @@ def cmd_limbo(message):
                 font_big = ImageFont.load_default()
                 font_small = ImageFont.load_default()
 
-            # Center X coordinate exact box ke beech me set kiya gaya hai (500 center width)
             draw.text((500, 420), f"{actual_multiplier:.2f}x", fill=(255, 255, 255), font=font_big, anchor="mm")
-            
-            # Neeche ke boxes ke coordinates
             draw.text((200, 785), f"{target:.2f}x", fill=(255, 255, 255), font=font_small, anchor="mm")
             draw.text((500, 785), status_text, fill=color_status, font=font_small, anchor="mm")
             draw.text((800, 785), payout_text, fill=(255, 255, 255), font=font_small, anchor="mm")
@@ -723,6 +780,41 @@ def handle_pvp_callbacks(call):
 def handle_text_and_photos(message):
     try:
         user_id = message.from_user.id
+
+        # Quick Tip via Reply (Agar kisi ke message par reply karke sirf amount likha ho)
+        if message.reply_to_message and message.content_type == 'text':
+            text_val = message.text.strip()
+            try:
+                amount = float(text_val)
+                target_id = message.reply_to_message.from_user.id
+                
+                if target_id != user_id and amount > 0:
+                    sender_bal = get_balance(user_id)
+                    if sender_bal >= amount:
+                        USER_BALANCES[user_id] -= amount
+                        USER_BALANCES[target_id] = get_balance(target_id) + amount
+                        target_name = message.reply_to_message.from_user.first_name
+
+                        bot.reply_to(
+                            message,
+                            f"🎁 <b>TIP SUCCESSFUL!</b>\n\n"
+                            f"👤 To: <b>{target_name}</b> (<code>{target_id}</code>)\n"
+                            f"💰 Amount: <b>₹{amount:.2f}</b>\n"
+                            f"💳 Your New Balance: <b>₹{get_balance(user_id):.2f}</b>"
+                        )
+                        try:
+                            bot.send_message(
+                                target_id,
+                                f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
+                                f"👤 From: <b>{message.from_user.first_name}</b>\n"
+                                f"💰 Amount: <b>₹{amount:.2f}</b>\n"
+                                f"💳 New Balance: <b>₹{get_balance(target_id):.2f}</b>"
+                            )
+                        except Exception:
+                            pass
+                        return
+            except ValueError:
+                pass
 
         if user_id in USER_WAITING_STATE:
             state = USER_WAITING_STATE.get(user_id)
