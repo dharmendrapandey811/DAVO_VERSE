@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAHHcgpJSjVmZ7KUZwYNa8zT-hPMPzn78sg"
+BOT_TOKEN = "8728557922:AAGe23yAJuzRZHSxCb3borALCiyRqPPISlY"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -29,7 +29,7 @@ LIMBO_IMAGE_URL = "AgACAgUAAxkBAAICKmq2gzs5GMIisCxAwPCiItZM6TElAALBE2sbz32wVfrsv
 
 # Webhook clear on startup to avoid conflict issues
 try:
-    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=5)
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=3)
     logging.info("Cleaned pending webhooks successfully.")
 except Exception as e:
     logging.warning(f"Failed to clear webhook: {e}")
@@ -371,7 +371,6 @@ def cmd_dice_rush(message):
         USER_BALANCES[user_id] -= amount
         msg = bot.send_dice(message.chat.id, emoji="🎲")
         dice_val = msg.dice.value
-        time.sleep(2.5)
 
         win = False
         if choice == "low" and dice_val in [1, 2, 3]: win = True
@@ -454,7 +453,7 @@ def cmd_limbo(message):
             color_status = (255, 0, 0)
             status_caption = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
 
-        # Image ke upar text draw karna (Pillow with robust font fallbacks)
+        # Image ke upar text draw karna (Fast & Centered Multiplier X)
         try:
             file_info = bot.get_file(LIMBO_IMAGE_URL)
             downloaded_file = bot.download_file(file_info.file_path)
@@ -462,7 +461,7 @@ def cmd_limbo(message):
             img = Image.open(BytesIO(downloaded_file)).convert("RGB")
             draw = ImageDraw.Draw(img)
             
-            # Safe font loading for Linux/Cloud/Windows environments
+            # Safe font loading
             font_big, font_small = None, None
             for font_name in ["DejaVuSans-Bold.ttf", "arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
                 try:
@@ -476,8 +475,10 @@ def cmd_limbo(message):
                 font_big = ImageFont.load_default()
                 font_small = ImageFont.load_default()
 
-            # Coordinates par text draw karna (Image ke andar)
-            draw.text((360, 420), f"{actual_multiplier:.2f}x", fill=(255, 255, 255), font=font_big, anchor="mm")
+            # Center X coordinate exact box ke beech me set kiya gaya hai (500 center width)
+            draw.text((500, 420), f"{actual_multiplier:.2f}x", fill=(255, 255, 255), font=font_big, anchor="mm")
+            
+            # Neeche ke boxes ke coordinates
             draw.text((200, 785), f"{target:.2f}x", fill=(255, 255, 255), font=font_small, anchor="mm")
             draw.text((500, 785), status_text, fill=color_status, font=font_small, anchor="mm")
             draw.text((800, 785), payout_text, fill=(255, 255, 255), font=font_small, anchor="mm")
@@ -503,7 +504,6 @@ def cmd_limbo(message):
             )
         except Exception as img_err:
             logging.error(f"Image Draw Error: {img_err}")
-            # Fallback agar drawing fail ho jaye toh normal photo + caption bhejega
             fallback_caption = (
                 f"🚀 <b>LIMBO RESULT</b>\n\n"
                 f"🎯 Target: <b>{target:.2f}x</b>\n"
@@ -538,7 +538,6 @@ def cmd_slots(message):
         for r in range(1, rounds + 1):
             msg = bot.send_dice(message.chat.id, emoji="🎰")
             val = msg.dice.value
-            time.sleep(2.2)
 
             if val in [1, 22, 43, 64]:
                 payout = amount * 5.0
@@ -677,12 +676,10 @@ def handle_pvp_callbacks(call):
         bot.send_message(call.message.chat.id, f"🔴 <b>{match['p1_name']}</b> rolling...")
         m1 = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
         r1 = m1.dice.value
-        time.sleep(2.5)
 
         bot.send_message(call.message.chat.id, f"🔵 <b>{match['p2_name']}</b> rolling...")
         m2 = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
         r2 = m2.dice.value
-        time.sleep(2.5)
 
         diff1 = abs(r1 - match["target"])
         diff2 = abs(r2 - match["target"])
@@ -823,10 +820,10 @@ def start_polling():
     print("⚡ Starting Telegram Bot Polling...")
     while True:
         try:
-            bot.polling(none_stop=True, interval=1, timeout=30)
+            bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
             logging.error(f"Polling Crashed: {e}")
-            time.sleep(3)
+            time.sleep(1)
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=start_polling, daemon=True)
