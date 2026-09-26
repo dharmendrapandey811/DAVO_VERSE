@@ -5,7 +5,7 @@ import time
 import threading
 import logging
 import requests
-from io import BytesIO
+import io
 from PIL import Image, ImageDraw, ImageFont
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -22,9 +22,6 @@ BOT_NAME = "DAVO CASINO"
 
 MIN_BET = 10.0
 MAX_BET = 10000.0
-
-# Limbo background graphic file_id
-LIMBO_IMAGE_URL = "AgACAgUAAxkBAAICKmq2gzs5GMIisCxAwPCiItZM6TElAALBE2sbz32wVfrsvGptNULkAQADAgADeQADPQQ"
 
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=3)
@@ -389,7 +386,7 @@ def check_wallet(message):
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
 
 # -------------------------------------------------------------
-# SOLO GAMES (/dr, /limbo with PIL image text, /slots)
+# SOLO GAMES (/dr, /limbo with PIL image card, /slots)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['dr', 'dicerush'])
 def cmd_dice_rush(message):
@@ -457,6 +454,7 @@ def cmd_limbo(message):
         if len(args) < 2:
             bot.reply_to(message, "⚠️ Usage: <code>/limbo 100 2.0</code>")
             return
+            
         amount, target = float(args[0]), float(args[1])
         balance = get_balance(user_id)
         if balance < amount:
@@ -471,40 +469,52 @@ def cmd_limbo(message):
         if win:
             payout = amount * target
             USER_BALANCES[user_id] += payout
-            status_str = f"WON! {actual_multiplier}x"
-            res = f"🎉 <b>WON!</b> Multiplier: <b>{actual_multiplier}x</b> (Won ₹{payout:.2f})"
+            net_profit = payout - amount
+            res_text = f"WON! +₹{net_profit:.2f}"
         else:
-            status_str = f"CRASHED! {actual_multiplier}x"
-            res = f"💥 <b>CRASHED!</b> Multiplier: <b>{actual_multiplier}x</b>"
+            res_text = f"CRASHED! -₹{amount:.2f}"
+            
+        updated_bal = get_balance(user_id)
+
+        # Fast local PIL Image generation with text printed on it
+        img = Image.new('RGB', (600, 350), color=(15, 15, 25))
+        d = ImageDraw.Draw(img)
         
         try:
-            file_info = bot.get_file(LIMBO_IMAGE_URL)
-            downloaded_file = bot.download_file(file_info.file_path)
-            img = Image.open(BytesIO(downloaded_file)).convert("RGB")
-            
-            draw = ImageDraw.Draw(img)
-            font = ImageFont.load_default()
+            font_large = ImageFont.truetype("arial.ttf", 30)
+            font_small = ImageFont.truetype("arial.ttf", 20)
+        except:
+            font_large = ImageFont.load_default()
+            font_small = ImageFont.load_default()
 
-            draw.text((30, 30), f"Target: {target}x", fill=(255, 255, 255))
-            draw.text((30, 60), status_str, fill=(0, 255, 0) if win else (255, 50, 50))
-            draw.text((30, 90), f"Balance: ₹{get_balance(user_id):.2f}", fill=(200, 200, 200))
+        d.text((30, 30), "🚀 DAVO LIMBO GAME", fill=(0, 255, 204), font=font_large)
+        d.text((30, 80), f"Player: {message.from_user.first_name}", fill=(255, 255, 255), font=font_small)
+        d.text((30, 120), f"Bet Amount: ₹{amount:.2f}", fill=(255, 255, 255), font=font_small)
+        d.text((30, 160), f"Target: {target}x  |  Hit: {actual_multiplier}x", fill=(255, 215, 0), font=font_small)
+        
+        result_color = (0, 255, 0) if win else (255, 69, 0)
+        d.text((30, 210), f"Result: {res_text}", fill=result_color, font=font_large)
+        d.text((30, 270), f"Balance: ₹{updated_bal:.2f}", fill=(200, 200, 200), font=font_small)
 
-            bio = BytesIO()
-            bio.name = 'limbo.png'
-            img.save(bio, 'PNG')
-            bio.seek(0)
+        bio = io.BytesIO()
+        bio.name = 'limbo_result.png'
+        img.save(bio, 'PNG')
+        bio.seek(0)
 
-            bot.send_photo(
-                message.chat.id, 
-                bio, 
-                caption=f"🚀 <b>LIMBO GAME</b>\n🎯 Target: <b>{target}x</b>\n{res}\n💳 Balance: <b>₹{get_balance(user_id):.2f}</b>"
-            )
-        except Exception as img_err:
-            logging.error(f"Limbo Image Draw Error: {img_err}")
-            bot.reply_to(message, f"🚀 <b>LIMBO GAME</b>\nTarget: {target}x\n{res}\n💳 Balance: ₹{get_balance(user_id):.2f}")
-            
+        caption_text = (
+            f"🚀 <b>DAVO CASINO - LIMBO</b> 🚀\n\n"
+            f"👤 Player: {message.from_user.first_name}\n"
+            f"💸 Bet: <b>₹{amount:.2f}</b> | Target: <b>{target}x</b>\n"
+            f"📊 Multiplier: <b>{actual_multiplier}x</b>\n"
+            f"{'🎉 <b>WON! Payout: ₹' + f'{payout:.2f}</b>' if win else '💥 <b>CRASHED! Lost: ₹' + f'{amount:.2f}</b>'}\n\n"
+            f"💳 <b>New Balance: ₹{updated_bal:.2f}</b>"
+        )
+
+        bot.send_photo(message.chat.id, bio, caption=caption_text, parse_mode="HTML")
+
     except Exception as e: 
         logging.error(f"Limbo Error: {e}")
+        bot.reply_to(message, f"⚠️ An error occurred: {e}")
 
 @bot.message_handler(commands=['slots', 'slot'])
 def cmd_slots(message):
@@ -526,6 +536,7 @@ def cmd_slots(message):
         else:
             bot.reply_to(message, f"💔 <b>LOST!</b>")
     except Exception as e: logging.error(f"Slots Error: {e}")
+
 # -------------------------------------------------------------
 # PVP & BOT MANUAL THROW GAMES (/dice, /bowl, /basketball, /dart)
 # -------------------------------------------------------------
@@ -645,19 +656,16 @@ def handle_pvp_callbacks(call):
                 bot.answer_callback_query(call.id, "❌ Yeh aapki baari nahi hai!", show_alert=True)
                 return
 
-            # Execute throw via dice
             msg = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
             score = msg.dice.value
 
             if match["turn"] == "p1":
                 match["p1_scores"].append(score)
                 if match["is_bot"]:
-                    # Bot plays automatically for round
                     bot_score = random.randint(1, 6) if match["emoji"] == "🎲" else (random.randint(1, 6) if match["emoji"] == "🎳" else random.randint(1, 5))
                     match["p2_scores"].append(bot_score)
                     
                     if match["current_round"] >= match["rounds"]:
-                        # Finish match
                         p1_total = sum(match["p1_scores"])
                         p2_total = sum(match["p2_scores"])
                         
