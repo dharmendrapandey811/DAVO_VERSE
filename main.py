@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAHxJzAY_dY7kBj83YZTYyQBBhHZYRJKdAc"
+BOT_TOKEN = "8728557922:AAFgM7pOjjbRFJMmNOT0fs3-T7DBOLH8NH8"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -24,10 +24,8 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
-# Aapka Limbo Rocket Image File ID
 LIMBO_IMAGE_URL = "AgACAgUAAxkBAAICKmq2gzs5GMIisCxAwPCiItZM6TElAALBE2sbz32wVfrsvGptNULkAQADAgADeQADPQQ"
 
-# Webhook clear on startup to avoid conflict issues
 try:
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=3)
     logging.info("Cleaned pending webhooks successfully.")
@@ -54,7 +52,6 @@ def get_balance(user_id):
     return USER_BALANCES[user_id]
 
 def parse_pvp_args(args, user_id):
-    """PVP/Bot games ke liye arguments parse karta hai. Agar rounds nahi diye toh default 1 set karega."""
     if len(args) < 1:
         return None, None, "⚠️ Amount mention karein! (Example: <code>/bowl 100</code> ya <code>/bowl 100 3</code>)"
 
@@ -65,40 +62,6 @@ def parse_pvp_args(args, user_id):
     amount = None
     rounds = 1
 
-    if val1 == "all":
-        amount = balance
-        if val2:
-            try: rounds = int(val2)
-            except ValueError: pass
-    elif val2 == "all":
-        amount = balance
-        try: rounds = int(val1)
-        except ValueError: pass
-    else:
-        for v in [val1, val2]:
-            if v is not None:
-                try:
-                    n = float(v)
-                    # Agar value 1 se 5 ke beech hai aur integer hai, toh woh rounds ho sakta hai
-                    if 1 <= n <= 5 and rounds == 1 and n.is_integer() and amount is not None:
-                        rounds = int(n)
-                    elif 1 <= n <= 5 and amount is None and n.is_integer():
-                        # Agar pehle chota number aaya hai toh use round maan sakte hain ya amount
-                        # Let's check structure: /bowl 100 3 -> amount=100, rounds=3
-                        pass
-                    if amount is None:
-                        amount = n
-                    else:
-                        try:
-                            maybe_rounds = int(v)
-                            if 1 <= maybe_rounds <= 5:
-                                rounds = maybe_rounds
-                        except:
-                            pass
-                except ValueError:
-                    pass
-
-    # Safer precise parsing for 2 args like /bowl 100 3 or /bowl 3 100
     try:
         if len(args) >= 2:
             p1, p2 = float(args[0]), float(args[1])
@@ -109,7 +72,10 @@ def parse_pvp_args(args, user_id):
             else:
                 amount, rounds = p1, int(p2) if p2.is_integer() else 1
         elif len(args) == 1:
-            amount = float(args[0])
+            if val1 == "all":
+                amount = balance
+            else:
+                amount = float(args[0])
             rounds = 1
     except Exception:
         pass
@@ -126,48 +92,6 @@ def parse_pvp_args(args, user_id):
         return None, None, "❌ Rounds 1 se 5 ke beech hone chahiye!"
 
     return amount, rounds, None
-
-def parse_amount_and_choice(args, user_id, valid_choices=None):
-    if len(args) < 2:
-        return None, None, "⚠️ Format sahi nahi hai! (Example: /dr 100 low ya /dr low 100)"
-
-    val1, val2 = args[0].lower(), args[1].lower()
-    balance = get_balance(user_id)
-    amount = None
-    choice = None
-
-    if val1 == "all":
-        amount = balance
-        if val2 in valid_choices:
-            choice = val2
-    elif val2 == "all":
-        amount = balance
-        if val1 in valid_choices:
-            choice = val1
-    else:
-        for val in [val1, val2]:
-            if valid_choices and val in valid_choices:
-                choice = val
-            else:
-                try:
-                    amount = float(val)
-                except ValueError:
-                    pass
-
-    if choice is None and valid_choices:
-        if val1 in valid_choices: choice = val1
-        elif val2 in valid_choices: choice = val2
-
-    if amount is None or amount <= 0:
-        return None, None, "❌ Invalid Amount!"
-    if amount < MIN_BET:
-        return None, None, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!"
-    if amount > MAX_BET and amount != balance:
-        return None, None, f"❌ Maximum bet ₹{MAX_BET:.0f} hai!"
-    if balance < amount or balance == 0:
-        return None, None, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai."
-
-    return amount, choice, None
 
 # -------------------------------------------------------------
 # START & ADMIN COMMANDS
@@ -228,15 +152,14 @@ def send_games_list(message):
         f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
         f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n"
         f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code>\n"
-        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code>\n"
-        f"🏦 <b>Bot Fund:</b> <code>/hb</code>\n\n"
-        f"⚔️ <b>PVP / BOT GAMES (Auto 1 round if not specified):</b>\n"
-        f"🎲 <b>Dice:</b> <code>/dice 100</code> ya <code>/dice 100 3</code>\n"
-        f"🎳 <b>Bowling:</b> <code>/bowl 100</code> ya <code>/bowl 100 3</code>\n"
-        f"🏀 <b>Basketball:</b> <code>/basketball 100</code> ya <code>/basketball 100 3</code>\n"
-        f"🎯 <b>Dart:</b> <code>/dart 100</code> ya <code>/dart 100 3</code>\n\n"
+        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code>\n\n"
+        f"⚔️ <b>PVP / BOT GAMES (Turn-by-turn Manual Throw):</b>\n"
+        f"🎲 <b>Dice:</b> <code>/dice 100</code>\n"
+        f"🎳 <b>Bowling:</b> <code>/bowl 100</code>\n"
+        f"🏀 <b>Basketball:</b> <code>/basketball 100</code>\n"
+        f"🎯 <b>Dart:</b> <code>/dart 100</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
-        f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code>\n"
+        f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code>\n"
         f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code>\n"
         f"🎰 <b>Slots:</b> <code>/slots 100 3</code>"
     )
@@ -245,354 +168,6 @@ def send_games_list(message):
 def check_wallet(message):
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
-
-# --- ESCROW COMMAND ---
-@bot.message_handler(commands=['escrow'])
-def cmd_escrow(message):
-    try:
-        user_id = message.from_user.id
-        args = message.text.split()[1:]
-        
-        amount = None
-        if message.reply_to_message and len(args) > 0:
-            try: amount = float(args[0])
-            except ValueError: pass
-        elif len(args) >= 1:
-            try: amount = float(args[0])
-            except ValueError: pass
-
-        if amount is None or amount <= 0:
-            bot.reply_to(message, "⚠️ <b>Usage:</b>\n1. Kisi ke message par reply karke likhein: <code>/escrow 500</code>\n2. Direct likhein: <code>/escrow 500</code>")
-            return
-
-        balance = get_balance(user_id)
-        if balance < amount:
-            bot.reply_to(message, f"❌ Aapke wallet me sufficient balance nahi hai! Current Balance: ₹{balance:.2f}")
-            return
-
-        USER_BALANCES[user_id] -= amount
-        deal_id = f"esc_{user_id}_{int(time.time())}"
-        seller_id = message.reply_to_message.from_user.id if message.reply_to_message else None
-        seller_name = message.reply_to_message.from_user.first_name if message.reply_to_message else "<i>Open Deal (Anyone can accept)</i>"
-
-        ESCROW_DEALS[deal_id] = {
-            "buyer_id": user_id,
-            "buyer_name": message.from_user.first_name,
-            "seller_id": seller_id,
-            "seller_name": seller_name,
-            "amount": amount,
-            "status": "WAITING"
-        }
-
-        markup = InlineKeyboardMarkup()
-        markup.add(
-            InlineKeyboardButton("✅ Accept Deal", callback_data=f"esc_accept_{deal_id}"),
-            InlineKeyboardButton("❌ Cancel Deal", callback_data=f"esc_cancel_{deal_id}")
-        )
-
-        bot.reply_to(
-            message,
-            f"🛡️ <b>SECURE ESCROW CREATED</b>\n\n"
-            f"👤 <b>Buyer:</b> {message.from_user.first_name}\n"
-            f"👤 <b>Seller:</b> {seller_name}\n"
-            f"💰 <b>Escrow Amount:</b> ₹{amount:.2f} (Held safely)\n"
-            f"📊 <b>Status:</b> ⏳ Waiting for Seller\n\n"
-            f"<i>Neeche diye gaye button par click karke deal accept karein!</i>",
-            reply_markup=markup
-        )
-    except Exception as e:
-        logging.error(f"Escrow Error: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("esc_"))
-def handle_escrow_callbacks(call):
-    try:
-        data = call.data.split("_")
-        action = data[1]
-        deal_id = "_".join(data[2:])
-        user_id = call.from_user.id
-
-        if deal_id not in ESCROW_DEALS:
-            bot.answer_callback_query(call.id, "❌ Yeh escrow deal exist nahi karti ya complete ho chuki hai!", show_alert=True)
-            return
-
-        deal = ESCROW_DEALS[deal_id]
-
-        if action == "cancel":
-            if user_id != deal["buyer_id"] and user_id != ADMIN_ID:
-                bot.answer_callback_query(call.id, "❌ Sirf Buyer ya Admin deal cancel kar sakta hai!", show_alert=True)
-                return
-            
-            USER_BALANCES[deal["buyer_id"]] += deal["amount"]
-            bot.edit_message_text(
-                f"❌ <b>ESCROW CANCELLED!</b>\n\n💰 ₹{deal['amount']:.2f} buyer ke wallet me refund kar diye gaye hain.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-            del ESCROW_DEALS[deal_id]
-            return
-
-        elif action == "accept":
-            if deal["seller_id"] and user_id != deal["seller_id"]:
-                bot.answer_callback_query(call.id, "❌ Aap is specific deal ke seller nahi hain!", show_alert=True)
-                return
-            if user_id == deal["buyer_id"]:
-                bot.answer_callback_query(call.id, "❌ Aap apni hi deal accept nahi kar sakte!", show_alert=True)
-                return
-
-            deal["seller_id"] = user_id
-            deal["seller_name"] = call.from_user.first_name
-            deal["status"] = "IN_PROGRESS"
-
-            markup = InlineKeyboardMarkup()
-            markup.add(
-                InlineKeyboardButton("🏆 Release Money to Seller", callback_data=f"esc_release_{deal_id}"),
-                InlineKeyboardButton("⚠️ Raise Dispute", callback_data=f"esc_dispute_{deal_id}")
-            )
-
-            bot.edit_message_text(
-                f"🛡️ <b>ESCROW IN PROGRESS</b>\n\n"
-                f"👤 <b>Buyer:</b> {deal['buyer_name']}\n"
-                f"👤 <b>Seller:</b> {deal['seller_name']}\n"
-                f"💰 <b>Amount:</b> ₹{deal['amount']:.2f}\n"
-                f"📊 <b>Status:</b> 🔄 Deal active hai, kaam pura hone par Buyer release button dabaye.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=markup
-            )
-            bot.answer_callback_query(call.id, "✅ Deal successfully accepted!")
-            return
-
-        elif action == "release":
-            if user_id != deal["buyer_id"] and user_id != ADMIN_ID:
-                bot.answer_callback_query(call.id, "❌ Sirf Buyer paise release kar sakta hai!", show_alert=True)
-                return
-
-            USER_BALANCES[deal["seller_id"]] = get_balance(deal["seller_id"]) + deal["amount"]
-            bot.edit_message_text(
-                f"✅ <b>ESCROW COMPLETED & RELEASED!</b>\n\n"
-                f"👤 <b>Buyer:</b> {deal['buyer_name']}\n"
-                f"👤 <b>Seller:</b> {deal['seller_name']}\n"
-                f"💰 <b>Amount Transferred:</b> ₹{deal['amount']:.2f}\n"
-                f"🎉 <i>Paise successfully seller ke wallet me bhej diye gaye hain!</i>",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-            try:
-                bot.send_message(deal["seller_id"], f"🎉 <b>ESCROW PAYMENT RECEIVED!</b>\n\n💰 ₹{deal['amount']:.2f} aapke wallet me add kar diye gaye hain.")
-            except Exception: pass
-            del ESCROW_DEALS[deal_id]
-            return
-
-        elif action == "dispute":
-            if user_id != deal["buyer_id"] and user_id != deal["seller_id"]:
-                bot.answer_callback_query(call.id, "❌ Aap is deal ke member nahi hain!", show_alert=True)
-                return
-
-            bot.edit_message_text(
-                f"🚨 <b>ESCROW DISPUTE RAISED!</b>\n\n"
-                f"👤 <b>Buyer:</b> {deal['buyer_name']}\n"
-                f"👤 <b>Seller:</b> {deal['seller_name']}\n"
-                f"💰 <b>Amount:</b> ₹{deal['amount']:.2f}\n\n"
-                f"⚠️ Admin ko notify kar diya gaya hai. Admin jald hi is deal ko review karega.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-            bot.send_message(ADMIN_ID, f"🚨 <b>DISPUTE ALERT!</b> Deal ID: <code>{deal_id}</code> me dispute raise hua hai. Amount: ₹{deal['amount']:.2f}")
-            return
-    except Exception as e:
-        logging.error(f"Escrow CB Error: {e}")
-
-@bot.message_handler(commands=['tip'])
-def cmd_tip(message):
-    try:
-        user_id = message.from_user.id
-        args = message.text.split()[1:]
-        target_id = None
-        amount = None
-
-        if message.reply_to_message:
-            target_id = message.reply_to_message.from_user.id
-            if len(args) > 0:
-                try: amount = float(args[0])
-                except ValueError: pass
-        elif len(args) >= 2:
-            try:
-                target_id = int(args[0])
-                amount = float(args[1])
-            except ValueError: pass
-
-        if not target_id or amount is None or amount <= 0:
-            bot.reply_to(message, "⚠️ <b>Usage:</b>\n1. Reply to message: <code>/tip 50</code> or just <code>50</code>\n2. Direct: <code>/tip user_id amount</code>")
-            return
-
-        if target_id == user_id:
-            bot.reply_to(message, "❌ Aap khud ko tip nahi bhej sakte!")
-            return
-
-        sender_bal = get_balance(user_id)
-        if sender_bal < amount:
-            bot.reply_to(message, f"❌ Aapke wallet me itna balance nahi hai! Current Balance: ₹{sender_bal:.2f}")
-            return
-
-        USER_BALANCES[user_id] -= amount
-        USER_BALANCES[target_id] = get_balance(target_id) + amount
-        target_name = message.reply_to_message.from_user.first_name if message.reply_to_message else f"User {target_id}"
-
-        bot.reply_to(
-            message,
-            f"🎁 <b>TIP SUCCESSFUL!</b>\n\n"
-            f"👤 To: <b>{target_name}</b> (<code>{target_id}</code>)\n"
-            f"💰 Amount: <b>₹{amount:.2f}</b>\n"
-            f"💳 Your New Balance: <b>₹{get_balance(user_id):.2f}</b>"
-        )
-        try:
-            bot.send_message(
-                target_id,
-                f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
-                f"👤 From: <b>{message.from_user.first_name}</b>\n"
-                f"💰 Amount: <b>₹{amount:.2f}</b>\n"
-                f"💳 New Balance: <b>₹{get_balance(target_id):.2f}</b>"
-            )
-        except Exception: pass
-    except Exception as e:
-        logging.error(f"Tip Error: {e}")
-
-@bot.message_handler(commands=['hb', 'botfund'])
-def cmd_bot_fund(message):
-    try:
-        bot.reply_to(
-            message,
-            "🤖 <b>BOT FUND</b>\n"
-            "🏦 Balance: $1,451.83\n"
-            "✅ Active — Bets Allowed!\n"
-            "💎 Davo Verse"
-        )
-    except Exception as e:
-        logging.error(f"HB Command Error: {e}")
-
-# -------------------------------------------------------------
-# DEPOSIT & WITHDRAWAL
-# -------------------------------------------------------------
-@bot.message_handler(commands=['deposit', 'dep'])
-def cmd_deposit(message):
-    try:
-        args = message.text.split()[1:]
-        if not args:
-            bot.reply_to(message, "⚠️ Usage: <code>/deposit amount</code>\nExample: <code>/deposit 500</code>")
-            return
-
-        try:
-            amount = float(args[0])
-            if amount < 10:
-                bot.reply_to(message, "❌ Minimum deposit ₹10 hai!")
-                return
-        except ValueError:
-            bot.reply_to(message, "❌ Valid amount enter karein!")
-            return
-
-        user_id = message.from_user.id
-        note = f"Dep_{user_id}_{int(time.time())}"
-        upi_url = f"upi://pay?pa={UPI_ID}&pn={urllib.parse.quote(BOT_NAME)}&am={amount:.2f}&cu=INR&tn={note}"
-        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
-
-        caption = (
-            f"💳 <b>DEPOSIT REQUEST</b>\n\n"
-            f"💰 <b>Amount:</b> ₹{amount:.2f}\n"
-            f"📍 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
-            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
-            f"📸 <b>INSTRUCTIONS:</b>\n"
-            f"1. QR Code scan karke ₹{amount:.2f} pay karein.\n"
-            f"2. Payment hone ke baad <b>Payment Screenshot</b> is bot ko chat me bhej dein!\n"
-            f"3. Screenshot aate hi Admin verify karke wallet me balance add kar dega."
-        )
-
-        bot.send_photo(message.chat.id, photo=qr_api_url, caption=caption, reply_to_message_id=message.message_id)
-    except Exception as e:
-        logging.error(f"Deposit Error: {e}")
-
-@bot.message_handler(commands=['withdraw', 'wd'])
-def cmd_withdraw_menu(message):
-    try:
-        user_id = message.from_user.id
-        saved_upi = USER_UPI_IDS.get(user_id, "<i>Not Set</i>")
-        balance = get_balance(user_id)
-
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📍 Set / Change UPI ID", callback_data="wd_set_upi"))
-        markup.add(InlineKeyboardButton("💸 Withdraw Money", callback_data="wd_process_req"))
-
-        text = (
-            f"🏦 <b>WITHDRAWAL DASHBOARD</b>\n\n"
-            f"💳 <b>Wallet Balance:</b> ₹{balance:.2f}\n"
-            f"📍 <b>Saved UPI ID:</b> <code>{saved_upi}</code>\n\n"
-            f"👇 Neeche diye gaye buttons par click karein:"
-        )
-
-        bot.reply_to(message, text, reply_markup=markup)
-    except Exception as e:
-        logging.error(f"WD Menu Error: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data in ["wd_set_upi", "wd_process_req"])
-def handle_withdrawal_buttons(call):
-    try:
-        user_id = call.from_user.id
-
-        if call.data == "wd_set_upi":
-            USER_WAITING_STATE[user_id] = "WAITING_FOR_UPI"
-            bot.answer_callback_query(call.id)
-            bot.send_message(call.message.chat.id, "✏️ <b>Apna UPI ID type karke chat me bhejein:</b>\n(Example: <code>9876543210@paytm</code> ya <code>name@upi</code>)")
-
-        elif call.data == "wd_process_req":
-            saved_upi = USER_UPI_IDS.get(user_id)
-            if not saved_upi:
-                bot.answer_callback_query(call.id, "❌ Pehle 'Set UPI ID' button daba kar UPI ID save karein!", show_alert=True)
-                return
-
-            balance = get_balance(user_id)
-            if balance < 50:
-                bot.answer_callback_query(call.id, "❌ Minimum withdrawal ₹50 hai!", show_alert=True)
-                return
-
-            USER_WAITING_STATE[user_id] = "WAITING_FOR_WD_AMOUNT"
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                call.message.chat.id,
-                f"💵 <b>Withdrawal Amount Enter Karein:</b>\n\n"
-                f"💳 Balance: ₹{balance:.2f}\n"
-                f"📍 UPI ID: <code>{saved_upi}</code>\n\n"
-                f"<i>Jitna withdraw karna hai woh amount type karke chat me bhejein (Min: ₹50).</i>"
-            )
-    except Exception as e:
-        logging.error(f"WD Button Error: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("wd_app_") or call.data.startswith("wd_rej_"))
-def handle_withdrawal_approval(call):
-    try:
-        if call.from_user.id != ADMIN_ID: return
-        data = call.data.split("_")
-        action = data[1]
-        wd_id = "_".join(data[2:])
-
-        if wd_id not in PENDING_WITHDRAWALS:
-            bot.answer_callback_query(call.id, "❌ Request pehle hi process ho chuki hai!", show_alert=True)
-            return
-
-        wd_data = PENDING_WITHDRAWALS[wd_id]
-        u_id = wd_data["user_id"]
-        amt = wd_data["amount"]
-
-        if action == "app":
-            bot.edit_message_text(f"✅ <b>WITHDRAWAL APPROVED!</b>\n👤 User: {wd_data['user_name']}\n💰 Amount: ₹{amt:.2f}\n📍 UPI: {wd_data['upi']}", chat_id=call.message.chat.id, message_id=call.message.message_id)
-            bot.send_message(u_id, f"🎉 <b>WITHDRAWAL SUCCESSFUL!</b>\n\n💰 ₹{amt:.2f} aapke UPI ID (<code>{wd_data['upi']}</code>) par bhej diye gaye hain.")
-        
-        elif action == "rej":
-            USER_BALANCES[u_id] = get_balance(u_id) + amt
-            bot.edit_message_text(f"❌ <b>WITHDRAWAL REJECTED!</b>\n💰 ₹{amt:.2f} refunded to user balance.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-            bot.send_message(u_id, f"❌ <b>WITHDRAWAL REJECTED!</b>\n\n💰 ₹{amt:.2f} aapke wallet me refund kar diye gaye hain.")
-
-        del PENDING_WITHDRAWALS[wd_id]
-    except Exception as e:
-        logging.error(f"WD Approval Error: {e}")
 
 # -------------------------------------------------------------
 # SOLO GAMES (/dr, /limbo, /slots)
@@ -603,9 +178,36 @@ def cmd_dice_rush(message):
         user_id = message.from_user.id
         args = message.text.split()[1:]
         valid_choices = ["low", "high", "even", "odd"]
-        amount, choice, err = parse_amount_and_choice(args, user_id, valid_choices)
-        if err:
-            bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code>")
+        
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Format sahi nahi hai! (Example: /dr 100 low)")
+            return
+            
+        val1, val2 = args[0].lower(), args[1].lower()
+        balance = get_balance(user_id)
+        amount, choice = None, None
+
+        if val1 == "all":
+            amount = balance
+            if val2 in valid_choices: choice = val2
+        elif val2 == "all":
+            amount = balance
+            if val1 in valid_choices: choice = val1
+        else:
+            for val in [val1, val2]:
+                if val in valid_choices: choice = val
+                else:
+                    try: amount = float(val)
+                    except ValueError: pass
+
+        if choice is None or amount is None or amount <= 0:
+            bot.reply_to(message, "❌ Invalid Amount or Choice!")
+            return
+        if amount < MIN_BET:
+            bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
+            return
+        if balance < amount:
+            bot.reply_to(message, "❌ Insufficient Balance!")
             return
 
         USER_BALANCES[user_id] -= amount
@@ -634,104 +236,23 @@ def cmd_limbo(message):
         user_id = message.from_user.id
         args = message.text.split()[1:]
         if len(args) < 2:
-            bot.reply_to(message, "⚠️ Usage: <code>/limbo [amount] [target]</code>\nExample: <code>/limbo 100 2.0</code>")
+            bot.reply_to(message, "⚠️ Usage: <code>/limbo 100 2.0</code>")
             return
-
-        try:
-            v1, v2 = float(args[0]), float(args[1])
-            if v1 < 10 and v2 >= 10:
-                target, amount = v1, v2
-            elif v2 < 10 and v1 >= 10:
-                target, amount = v2, v1
-            else:
-                amount, target = v1, v2
-        except ValueError:
-            bot.reply_to(message, "❌ Valid numbers enter karein!")
-            return
-
+        amount, target = float(args[0]), float(args[1])
         balance = get_balance(user_id)
-        if amount < MIN_BET:
-            bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
+        if balance < amount:
+            bot.reply_to(message, "❌ Insufficient balance!")
             return
-        if balance < amount or balance == 0:
-            bot.reply_to(message, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai.")
-            return
-        if target < 1.01 or target > 100.0:
-            bot.reply_to(message, "❌ <b>Invalid Target Multiplier!</b> Target <b>1.01x se 100.0x</b> ke beech hona chahiye.")
-            return
-
         USER_BALANCES[user_id] -= amount
-
-        if amount >= 100.0:
-            if target > 1.01:
-                actual_multiplier = round(random.uniform(1.01, target - 0.01), 2)
-            else:
-                actual_multiplier = 1.00
-        else:
-            actual_multiplier = round(random.uniform(1.00, 4.00) + (random.randint(1, 6) * 0.4), 2)
-
+        actual_multiplier = round(random.uniform(1.00, 3.00), 2)
         win = actual_multiplier >= target
-
         if win:
             payout = amount * target
             USER_BALANCES[user_id] += payout
-            status_text = "WIN"
-            payout_text = f"₹{payout:.2f}"
-            color_status = (0, 255, 0)
-            status_caption = f"🎉 <b>TARGET HIT! (WIN)</b>\n💰 Won: ₹{payout:.2f}"
+            res = f"🎉 <b>WON!</b> Multiplier: {actual_multiplier}x (Won ₹{payout:.2f})"
         else:
-            status_text = "LOSS"
-            payout_text = "₹0.00"
-            color_status = (255, 0, 0)
-            status_caption = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
-
-        try:
-            file_info = bot.get_file(LIMBO_IMAGE_URL)
-            downloaded_file = bot.download_file(file_info.file_path)
-            
-            img = Image.open(BytesIO(downloaded_file)).convert("RGB")
-            draw = ImageDraw.Draw(img)
-            
-            font_big, font_small = None, None
-            for font_name in ["DejaVuSans-Bold.ttf", "arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
-                try:
-                    font_big = ImageFont.truetype(font_name, 55)
-                    font_small = ImageFont.truetype(font_name.replace("-Bold", ""), 24)
-                    break
-                except IOError: continue
-            
-            if font_big is None:
-                font_big = ImageFont.load_default()
-                font_small = ImageFont.load_default()
-
-            draw.text((500, 420), f"{actual_multiplier:.2f}x", fill=(255, 255, 255), font=font_big, anchor="mm")
-            draw.text((200, 785), f"{target:.2f}x", fill=(255, 255, 255), font=font_small, anchor="mm")
-            draw.text((500, 785), status_text, fill=color_status, font=font_small, anchor="mm")
-            draw.text((800, 785), payout_text, fill=(255, 255, 255), font=font_small, anchor="mm")
-
-            bio = BytesIO()
-            bio.name = 'limbo_result.png'
-            img.save(bio, 'PNG')
-            bio.seek(0)
-            
-            result_caption = (
-                f"🚀 <b>LIMBO RESULT</b>\n\n"
-                f"🎯 Target: <b>{target:.2f}x</b>\n"
-                f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
-                f"{status_caption}\n"
-                f"💳 Balance: ₹{get_balance(user_id):.2f}"
-            )
-            bot.send_photo(chat_id=message.chat.id, photo=bio, caption=result_caption, reply_to_message_id=message.message_id)
-        except Exception as img_err:
-            logging.error(f"Image Draw Error: {img_err}")
-            fallback_caption = (
-                f"🚀 <b>LIMBO RESULT</b>\n\n"
-                f"🎯 Target: <b>{target:.2f}x</b>\n"
-                f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
-                f"{status_caption}\n"
-                f"💳 Balance: ₹{get_balance(user_id):.2f}"
-            )
-            bot.send_photo(message.chat.id, photo=LIMBO_IMAGE_URL, caption=fallback_caption, reply_to_message_id=message.message_id)
+            res = f"💥 <b>CRASHED!</b> Multiplier: {actual_multiplier}x"
+        bot.reply_to(message, f"{res}\n💳 Balance: ₹{get_balance(user_id):.2f}")
     except Exception as e: logging.error(f"Limbo Error: {e}")
 
 @bot.message_handler(commands=['slots', 'slot'])
@@ -739,60 +260,24 @@ def cmd_slots(message):
     try:
         user_id = message.from_user.id
         args = message.text.split()[1:]
-
-        if len(args) < 2:
-            bot.reply_to(message, "⚠️ Usage: <code>/slots [amount] [rounds]</code>\nExample: <code>/slots 100 3</code>")
+        amount = float(args[0]) if len(args) > 0 else 10.0
+        balance = get_balance(user_id)
+        if balance < amount:
+            bot.reply_to(message, "❌ Insufficient balance!")
             return
-
-        try:
-            v1, v2 = float(args[0]), float(args[1])
-            if v1 <= 10 and v2 > 10:
-                rounds, amount = int(v1), v2
-            elif v2 <= 10 and v1 > 10:
-                rounds, amount = int(v2), v1
-            else:
-                amount, rounds = v1, int(v2)
-        except ValueError:
-            bot.reply_to(message, "❌ Valid numbers enter karein!")
-            return
-
-        if amount < MIN_BET:
-            bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
-            return
-        if rounds < 1 or rounds > 10:
-            bot.reply_to(message, "❌ Rounds 1 se 10 ke beech hone chahiye!")
-            return
-
-        total_cost = amount * rounds
-        if get_balance(user_id) < total_cost:
-            bot.reply_to(message, f"❌ {rounds} rounds ke liye ₹{total_cost:.2f} chahiye. Balance kam hai!")
-            return
-
-        USER_BALANCES[user_id] -= total_cost
-        bot.reply_to(message, f"🎰 <b>Playing {rounds} Rounds of Slots!</b> (Total Bet: ₹{total_cost:.2f})")
-
-        total_payout = 0.0
-        for r in range(1, rounds + 1):
-            msg = bot.send_dice(message.chat.id, emoji="🎰")
-            val = msg.dice.value
-
-            if val in [1, 22, 43, 64]:
-                payout = amount * 5.0
-                total_payout += payout
-                bot.send_message(message.chat.id, f"Round {r}: 🎰 <b>JACKPOT 5X!</b> (+₹{payout:.2f})")
-            elif val in [2, 3, 4, 10, 15, 20]:
-                payout = amount * 1.5
-                total_payout += payout
-                bot.send_message(message.chat.id, f"Round {r}: 🎉 <b>WIN 1.5X!</b> (+₹{payout:.2f})")
-            else:
-                bot.send_message(message.chat.id, f"Round {r}: 💔 <b>LOST!</b>")
-
-        USER_BALANCES[user_id] += total_payout
-        bot.send_message(message.chat.id, f"🎰 <b>SLOTS FINISHED!</b>\n\nTotal Won: <b>₹{total_payout:.2f}</b>\n💳 Current Balance: <b>₹{get_balance(user_id):.2f}</b>")
+        USER_BALANCES[user_id] -= amount
+        msg = bot.send_dice(message.chat.id, emoji="🎰")
+        val = msg.dice.value
+        if val in [1, 22, 43, 64]:
+            payout = amount * 5.0
+            USER_BALANCES[user_id] += payout
+            bot.reply_to(message, f"🎰 <b>JACKPOT!</b> Won ₹{payout:.2f}")
+        else:
+            bot.reply_to(message, f"💔 <b>LOST!</b>")
     except Exception as e: logging.error(f"Slots Error: {e}")
 
 # -------------------------------------------------------------
-# PVP & BOT MULTI-ROUND TURN GAMES (/dice, /bowl, /basketball, /dart)
+# PVP & BOT TURN-BY-TURN MANUAL THROW GAMES (/dice, /bowl, /basketball, /dart)
 # -------------------------------------------------------------
 def create_pvp_challenge(message, game_type, emoji):
     user_id = message.from_user.id
@@ -815,7 +300,12 @@ def create_pvp_challenge(message, game_type, emoji):
         "p2_name": None,
         "amount": amount,
         "rounds": rounds,
-        "status": "WAITING"
+        "status": "WAITING",
+        "turn": "p1",
+        "current_round": 1,
+        "p1_scores": [],
+        "p2_scores": [],
+        "is_bot": False
     }
 
     markup = InlineKeyboardMarkup()
@@ -832,7 +322,7 @@ def create_pvp_challenge(message, game_type, emoji):
         f"🔄 <b>Total Rounds:</b> {rounds}\n"
         f"💰 <b>Bet Amount:</b> ₹{amount:.2f}\n"
         f"🏆 <b>Total Pot:</b> ₹{(amount * 2):.2f}\n\n"
-        f"<i>Group member accept karein ya 'Play with Bot' dabein! (Pehle Player khelega, fir Opponent)</i>",
+        f"<i>Turn-by-turn manual throw game! Pehle player apni baari khud fekega.</i>",
         reply_markup=markup
     )
 
@@ -870,219 +360,146 @@ def handle_pvp_callbacks(call):
             if user_id != match["p1_id"] and user_id != ADMIN_ID:
                 bot.answer_callback_query(call.id, "❌ Sirf Challenger cancel kar sakta hai!", show_alert=True)
                 return
-
             USER_BALANCES[match["p1_id"]] += match["amount"]
             bot.edit_message_text(f"❌ <b>Match Cancelled!</b>\n💰 ₹{match['amount']:.2f} refunded.", chat_id=call.message.chat.id, message_id=call.message.message_id)
             del PVP_MATCHES[match_id]
             return
 
-        p2_is_bot = False
-        if action == "bot":
+        elif action == "bot":
             if user_id != match["p1_id"]:
-                bot.answer_callback_query(call.id, "❌ Sirf Challenger bot option choose kar sakta hai!", show_alert=True)
+                bot.answer_callback_query(call.id, "❌ Sirf Challenger bot choose kar sakta hai!", show_alert=True)
                 return
-            p2_is_bot = True
             match["p2_id"] = "BOT"
             match["p2_name"] = "🤖 CASINO BOT"
+            match["is_bot"] = True
             match["status"] = "PLAYING"
 
         elif action == "accept":
             if user_id == match["p1_id"]:
                 bot.answer_callback_query(call.id, "❌ Apne hi challenge se khud nahi khel sakte!", show_alert=True)
                 return
-
             if get_balance(user_id) < match["amount"]:
                 bot.answer_callback_query(call.id, "❌ Wallet balance kam hai!", show_alert=True)
                 return
-
             USER_BALANCES[user_id] -= match["amount"]
             match["p2_id"] = user_id
             match["p2_name"] = call.from_user.first_name
+            match["is_bot"] = False
             match["status"] = "PLAYING"
+
+        elif action == "throw":
+            # Manual throw button clicked by the active player
+            turn_player = match["p1_id"] if match["turn"] == "p1" else match["p2_id"]
+            if user_id != turn_player:
+                bot.answer_callback_query(call.id, "❌ Abhi aapki baari nahi hai!", show_alert=True)
+                return
+            
+            bot.answer_callback_query(call.id, "🎲 Toss ho raha hai...")
+            execute_single_throw(call.message.chat.id, call.message.message_id, match_id)
+            return
+
+        # Match start hone par pehla throw button dikhayein
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(f"🎲 {match['p1_name']} Throw (Round 1/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
 
         bot.edit_message_text(
             f"⚔️ <b>MATCH STARTED!</b> {match['emoji']}\n\n"
             f"🔴 <b>{match['p1_name']}</b> VS 🔵 <b>{match['p2_name']}</b>\n"
             f"🔄 Rounds: <b>{match['rounds']}</b> | 💰 Pot: <b>₹{(match['amount']*2):.2f}</b>\n\n"
-            f"🎲 <i>Game shuru ho rahi hai...</i>",
+            f"👉 <b>{match['p1_name']}</b> ki baari hai! Neeche button dabakar apna throw karein:",
             chat_id=call.message.chat.id,
-            message_id=call.message.message_id
+            message_id=call.message.message_id,
+            reply_markup=markup
         )
-
-        chat_id = call.message.chat.id
-
-        # --- STEP 1: PLAYER 1 TURNS (Har round ke liye alag se dice feka jayega) ---
-        bot.send_message(chat_id, f"🔴 <b>{match['p1_name']}</b> ki baari hai (Total {match['rounds']} rounds)...")
-        p1_scores = []
-        for r in range(1, match['rounds'] + 1):
-            time.sleep(1.2)
-            msg = bot.send_dice(chat_id, emoji=match["emoji"])
-            val = msg.dice.value
-            p1_scores.append(val)
-            bot.send_message(chat_id, f"🔴 Round {r}: {match['p1_name']} ne feka ➡️ <b>{val}</b>")
-
-        p1_total = sum(p1_scores)
-        time.sleep(1.5)
-
-        # --- STEP 2: PLAYER 2 / BOT TURNS (Har round ke liye alag se dice feka jayega) ---
-        bot.send_message(chat_id, f"🔵 <b>{match['p2_name']}</b> ki baari hai (Total {match['rounds']} rounds)...")
-        p2_scores = []
-        for r in range(1, match['rounds'] + 1):
-            time.sleep(1.2)
-            msg = bot.send_dice(chat_id, emoji=match["emoji"])
-            val = msg.dice.value
-            p2_scores.append(val)
-            bot.send_message(chat_id, f"🔵 Round {r}: {match['p2_name']} ne feka ➡️ <b>{val}</b>")
-
-        p2_total = sum(p2_scores)
-        total_pot = match["amount"] * 2.0
-
-        # --- STEP 3: RESULT EVALUATION ---
-        result_summary = (
-            f"📊 <b>MATCH SCOREBOARD</b>\n\n"
-            f"🔴 {match['p1_name']} Scores: {p1_scores} (Total: <b>{p1_total}</b>)\n"
-            f"🔵 {match['p2_name']} Scores: {p2_scores} (Total: <b>{p2_total}</b>)\n\n"
-        )
-
-        if p1_total > p2_total:
-            USER_BALANCES[match["p1_id"]] += total_pot
-            result_text = f"🏆 <b>{match['p1_name']} WON THE MATCH!</b>\n\n{result_summary}💰 Prize: <b>₹{total_pot:.2f}</b>"
-        elif p2_total > p1_total:
-            if not p2_is_bot:
-                USER_BALANCES[match["p2_id"]] += total_pot
-            result_text = f"🏆 <b>{match['p2_name']} WON THE MATCH!</b>\n\n{result_summary}💰 Winner Pot Awarded!"
-        else:
-            USER_BALANCES[match["p1_id"]] += match["amount"]
-            if not p2_is_bot:
-                USER_BALANCES[match["p2_id"]] += match["amount"]
-            result_text = f"🤝 <b>MATCH TIED!</b>\n\n{result_summary}💰 Both players got refund."
-
-        bot.send_message(chat_id, result_text)
-        del PVP_MATCHES[match_id]
     except Exception as e:
         logging.error(f"PvP CB Error: {e}")
 
-# -------------------------------------------------------------
-# COMBINED INPUT HANDLER (TEXT & PHOTO)
-# -------------------------------------------------------------
-@bot.message_handler(content_types=['text', 'photo'])
-def handle_text_and_photos(message):
-    try:
-        user_id = message.from_user.id
+def execute_single_throw(chat_id, message_id, match_id):
+    match = PVP_MATCHES[match_id]
+    current_turn = match["turn"]
+    round_no = match["current_round"]
+    
+    # Telegram par dice bhejkar value nikalna
+    msg = bot.send_dice(chat_id, emoji=match["emoji"])
+    val = msg.dice.value
 
-        if message.reply_to_message and message.content_type == 'text':
-            text_val = message.text.strip()
-            try:
-                amount = float(text_val)
-                target_id = message.reply_to_message.from_user.id
-                
-                if target_id != user_id and amount > 0:
-                    sender_bal = get_balance(user_id)
-                    if sender_bal >= amount:
-                        USER_BALANCES[user_id] -= amount
-                        USER_BALANCES[target_id] = get_balance(target_id) + amount
-                        target_name = message.reply_to_message.from_user.first_name
+    if current_turn == "p1":
+        match["p1_scores"].append(val)
+        player_name = match["p1_name"]
+    else:
+        match["p2_scores"].append(val)
+        player_name = match["p2_name"]
 
-                        bot.reply_to(
-                            message,
-                            f"🎁 <b>TIP SUCCESSFUL!</b>\n\n"
-                            f"👤 To: <b>{target_name}</b> (<code>{target_id}</code>)\n"
-                            f"💰 Amount: <b>₹{amount:.2f}</b>\n"
-                            f"💳 Your New Balance: <b>₹{get_balance(user_id):.2f}</b>"
-                        )
-                        try:
-                            bot.send_message(
-                                target_id,
-                                f"🎁 <b>YOU RECEIVED A TIP!</b>\n\n"
-                                f"👤 From: <b>{message.from_user.first_name}</b>\n"
-                                f"💰 Amount: <b>₹{amount:.2f}</b>\n"
-                                f"💳 New Balance: <b>₹{get_balance(target_id):.2f}</b>"
-                            )
-                        except Exception: pass
-                        return
-            except ValueError: pass
+    bot.send_message(chat_id, f"🎯 <b>{player_name}</b> (Round {round_no}/{match['rounds']}) ne feka ➡️ <b>{val}</b>")
 
-        if user_id in USER_WAITING_STATE:
-            state = USER_WAITING_STATE.get(user_id)
-
-            if message.content_type != 'text':
-                bot.reply_to(message, "❌ Kripya text message me details bhejein!")
-                return
-
-            if state == "WAITING_FOR_UPI":
-                upi_input = message.text.strip()
-                if "@" not in upi_input or len(upi_input) < 5:
-                    bot.reply_to(message, "❌ Valid UPI ID enter karein! (e.g. <code>9876543210@paytm</code>)")
-                    return
-
-                USER_UPI_IDS[user_id] = upi_input
-                del USER_WAITING_STATE[user_id]
-
-                markup = InlineKeyboardMarkup()
-                markup.add(InlineKeyboardButton("💸 Withdraw Money Now", callback_data="wd_process_req"))
-                bot.reply_to(message, f"✅ <b>UPI ID Saved Successfully!</b>\n\n📍 UPI ID: <code>{upi_input}</code>", reply_markup=markup)
-                return
-
-            elif state == "WAITING_FOR_WD_AMOUNT":
-                try: amount = float(message.text.strip())
-                except ValueError:
-                    bot.reply_to(message, "❌ Kripya numeric amount type karein (e.g., 500)!")
-                    return
-
-                balance = get_balance(user_id)
-                if amount < 50:
-                    bot.reply_to(message, "❌ Minimum withdrawal ₹50 hai!")
-                    return
-                if balance < amount:
-                    bot.reply_to(message, f"❌ Insufficient Balance! Aapka balance ₹{balance:.2f} hai.")
-                    return
-
-                upi_details = USER_UPI_IDS.get(user_id)
-                USER_BALANCES[user_id] -= amount
-                del USER_WAITING_STATE[user_id]
-
-                wd_id = f"wd_{user_id}_{int(time.time())}"
-                PENDING_WITHDRAWALS[wd_id] = {
-                    "user_id": user_id,
-                    "user_name": message.from_user.full_name,
-                    "amount": amount,
-                    "upi": upi_details
-                }
-
-                bot.reply_to(message, f"✅ <b>Withdrawal Request Submitted!</b>\n\n💰 Amount: ₹{amount:.2f}\n📍 UPI: <code>{upi_details}</code>\n⏳ Status: Pending Admin Approval")
-
-                markup = InlineKeyboardMarkup()
-                markup.add(
-                    InlineKeyboardButton("✅ Approve", callback_data=f"wd_app_{wd_id}"),
-                    InlineKeyboardButton("❌ Reject & Refund", callback_data=f"wd_rej_{wd_id}")
-                )
-
-                bot.send_message(
-                    ADMIN_ID,
-                    f"🚨 <b>NEW WITHDRAWAL REQUEST!</b>\n\n"
-                    f"👤 <b>User:</b> {message.from_user.full_name} (<code>{user_id}</code>)\n"
-                    f"💰 <b>Amount:</b> ₹{amount:.2f}\n"
-                    f"📍 <b>UPI/Details:</b> <code>{upi_details}</code>\n"
-                    f"🆔 <b>Request ID:</b> <code>{wd_id}</code>",
-                    reply_markup=markup
-                )
-                return
-
-        if message.content_type == 'photo' and message.chat.type == 'private':
-            user_name = message.from_user.full_name
-            bot.reply_to(message, "✅ <b>Payment Screenshot Received!</b>\n\nAdmin ko verify karne ke liye bhej diya gaya hai. Kuch hi minutes me balance add ho jayega.")
+    # Next turn logic check karein
+    if current_turn == "p1":
+        # Check if P1 finished all rounds
+        if len(match["p1_scores"]) < match["rounds"]:
+            # P1 has more rounds left
+            match["current_round"] += 1
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton(f"🎲 {match['p1_name']} Throw (Round {match['current_round']}/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
+            bot.send_message(chat_id, f"👉 <b>{match['p1_name']}</b>, agla round khelein:", reply_markup=markup)
+        else:
+            # P1 finished all rounds, switch to P2 / Bot
+            match["turn"] = "p2"
+            match["current_round"] = 1
             
-            caption = (
-                f"📸 <b>NEW DEPOSIT SCREENSHOT!</b>\n\n"
-                f"👤 <b>User:</b> {user_name} (@{message.from_user.username or 'NoUsername'})\n"
-                f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
-                f"<b>Quick Add Balance:</b>\n"
-                f"<code>/addbal {user_id} AMOUNT</code>"
-            )
-            bot.send_photo(ADMIN_ID, photo=message.photo[-1].file_id, caption=caption)
-            return
-    except Exception as e:
-        logging.error(f"Combined Handler Error: {e}")
+            if match["is_bot"]:
+                bot.send_message(chat_id, f"🤖 <b>{match['p2_name']}</b> apni baari khud khel raha hai...")
+                # Bot saare rounds automatic ek-ek karke khelega
+                for r in range(1, match["rounds"] + 1):
+                    time.sleep(1.2)
+                    bot_msg = bot.send_dice(chat_id, emoji=match["emoji"])
+                    b_val = bot_msg.dice.value
+                    match["p2_scores"].append(b_val)
+                    bot.send_message(chat_id, f"🤖 Round {r}: {match['p2_name']} ne feka ➡️ <b>{b_val}</b>")
+                
+                # Bot ke baad direct match finalize karein
+                finalize_match(chat_id, match_id)
+            else:
+                markup = InlineKeyboardMarkup()
+                markup.add(InlineKeyboardButton(f"🎲 {match['p2_name']} Throw (Round 1/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
+                bot.send_message(chat_id, f"👉 Ab <b>{match['p2_name']}</b> ki baari hai! Neeche button dabakar apna throw karein:", reply_markup=markup)
+    else:
+        # P2 turn
+        if len(match["p2_scores"]) < match["rounds"]:
+            match["current_round"] += 1
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton(f"🎲 {match['p2_name']} Throw (Round {match['current_round']}/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
+            bot.send_message(chat_id, f"👉 <b>{match['p2_name']}</b>, agla round khelein:", reply_markup=markup)
+        else:
+            # P2 finished all rounds, finalize match
+            finalize_match(chat_id, match_id)
+
+def finalize_match(chat_id, match_id):
+    match = PVP_MATCHES[match_id]
+    p1_total = sum(match["p1_scores"])
+    p2_total = sum(match["p2_scores"])
+    total_pot = match["amount"] * 2.0
+
+    result_summary = (
+        f"📊 <b>MATCH SCOREBOARD</b>\n\n"
+        f"🔴 {match['p1_name']} Scores: {match['p1_scores']} (Total: <b>{p1_total}</b>)\n"
+        f"🔵 {match['p2_name']} Scores: {match['p2_scores']} (Total: <b>{p2_total}</b>)\n\n"
+    )
+
+    if p1_total > p2_total:
+        USER_BALANCES[match["p1_id"]] += total_pot
+        result_text = f"🏆 <b>{match['p1_name']} WON THE MATCH!</b>\n\n{result_summary}💰 Prize: <b>₹{total_pot:.2f}</b>"
+    elif p2_total > p1_total:
+        if not match["is_bot"]:
+            USER_BALANCES[match["p2_id"]] += total_pot
+        result_text = f"🏆 <b>{match['p2_name']} WON THE MATCH!</b>\n\n{result_summary}💰 Winner Pot Awarded!"
+    else:
+        USER_BALANCES[match["p1_id"]] += match["amount"]
+        if not match["is_bot"]:
+            USER_BALANCES[match["p2_id"]] += match["amount"]
+        result_text = f"🤝 <b>MATCH TIED!</b>\n\n{result_summary}💰 Both players got refund."
+
+    bot.send_message(chat_id, result_text)
+    del PVP_MATCHES[match_id]
 
 # -------------------------------------------------------------
 # KEEP ALIVE SERVER & BOT STARTUP
