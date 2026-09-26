@@ -143,8 +143,6 @@ def admin_add_balance(message):
 # -------------------------------------------------------------
 # BOT FUND (/hb)
 # -------------------------------------------------------------
-# BOT FUND (/hb)
-# -------------------------------------------------------------
 @bot.message_handler(commands=['hb'])
 def send_bot_fund(message):
     bot.reply_to(
@@ -153,7 +151,6 @@ def send_bot_fund(message):
         "<b>🏛 Bet active!</b>\n"
         "<b>🧿 Davo Verse</b>"
     )
-
 
 # -------------------------------------------------------------
 # DEPOSIT & WITHDRAWAL SYSTEM
@@ -475,24 +472,49 @@ def cmd_limbo(message):
         
         USER_BALANCES[user_id] -= amount
 
-        # Pehle waala standard random multiplier logic
         actual_multiplier = round(random.uniform(1.00, max(5.0, target * 1.5)), 2)
         win = actual_multiplier >= target
 
         if win:
             payout = amount * target
             USER_BALANCES[user_id] += payout
+            status_str = f"WON! {actual_multiplier}x"
             res = f"🎉 <b>WON!</b> Multiplier: {actual_multiplier}x (Won ₹{payout:.2f})"
         else:
+            status_str = f"CRASHED! {actual_multiplier}x"
             res = f"💥 <b>CRASHED!</b> Multiplier: {actual_multiplier}x"
         
+        # PIL Image Generation with text drawn on image
         try:
+            file_info = bot.get_file(LIMBO_IMAGE_URL)
+            downloaded_file = bot.download_file(file_info.file_path)
+            img = Image.open(BytesIO(downloaded_file)).convert("RGB")
+            
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 36)
+                font_small = ImageFont.truetype("arial.ttf", 26)
+            except:
+                font = ImageFont.load_default()
+                font_small = font
+
+            # Draw text on image
+            draw.text((40, 40), f"Target: {target}x", fill=(255, 255, 255), font=font)
+            draw.text((40, 100), status_str, fill=(0, 255, 0) if win else (255, 50, 50), font=font)
+            draw.text((40, 160), f"Balance: ₹{get_balance(user_id):.2f}", fill=(200, 200, 200), font=font_small)
+
+            bio = BytesIO()
+            bio.name = 'limbo.png'
+            img.save(bio, 'PNG')
+            bio.seek(0)
+
             bot.send_photo(
                 message.chat.id, 
-                LIMBO_IMAGE_URL, 
+                bio, 
                 caption=f"🚀 <b>LIMBO GAME</b>\nTarget: {target}x\n{res}\n💳 Balance: ₹{get_balance(user_id):.2f}"
             )
-        except Exception:
+        except Exception as img_err:
+            logging.error(f"Limbo Image Generation Error: {img_err}")
             bot.reply_to(message, f"{res}\n💳 Balance: ₹{get_balance(user_id):.2f}")
     except Exception as e: logging.error(f"Limbo Error: {e}")
 
