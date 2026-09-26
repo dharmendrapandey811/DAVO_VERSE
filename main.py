@@ -386,7 +386,7 @@ def send_games_list(message):
         f"🎯 <b>Dart:</b> <code>/dart 100</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
         f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code>\n"
-        f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code> (Bet > ₹20 auto crashes before target)\n"
+        f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code>\n"
         f"🎰 <b>Slots:</b> <code>/slots 100 3</code>"
     )
 
@@ -472,15 +472,9 @@ def cmd_limbo(message):
         
         USER_BALANCES[user_id] -= amount
 
-        if amount > 20.0:
-            if target > 1.01:
-                actual_multiplier = round(random.uniform(1.00, target - 0.01), 2)
-            else:
-                actual_multiplier = 1.00
-            win = False
-        else:
-            actual_multiplier = round(random.uniform(1.00, 3.00), 2)
-            win = actual_multiplier >= target
+        # Pehle waala standard random multiplier logic
+        actual_multiplier = round(random.uniform(1.00, max(5.0, target * 1.5)), 2)
+        win = actual_multiplier >= target
 
         if win:
             payout = amount * target
