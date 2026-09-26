@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAFgM7pOjjbRFJMmNOT0fs3-T7DBOLH8NH8"
+BOT_TOKEN = "8728557922:AAFlVRiM0THMLr7es_uLIM0PZUfJrBtTOGU"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -24,6 +24,7 @@ BOT_NAME = "DAVO CASINO"
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
+# Limbo background graphic file_id
 LIMBO_IMAGE_URL = "AgACAgUAAxkBAAICKmq2gzs5GMIisCxAwPCiItZM6TElAALBE2sbz32wVfrsvGptNULkAQADAgADeQADPQQ"
 
 try:
@@ -140,19 +141,15 @@ def admin_add_balance(message):
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
 # -------------------------------------------------------------
-# MENU, WALLET & ESCROW SYSTEM
+# MENU & WALLET SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
 def send_games_list(message):
     bot.reply_to(
         message, 
         f"🎰 <b>{BOT_NAME} MENU</b> 🎰\n\n"
-        f"💳 <b>FINANCE & ESCROW:</b>\n"
-        f"➕ <b>Deposit:</b> <code>/deposit amount</code>\n"
-        f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
-        f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n"
-        f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code>\n"
-        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code>\n\n"
+        f"💳 <b>WALLET:</b>\n"
+        f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n\n"
         f"⚔️ <b>PVP / BOT GAMES (Turn-by-turn Manual Throw):</b>\n"
         f"🎲 <b>Dice:</b> <code>/dice 100</code>\n"
         f"🎳 <b>Bowling:</b> <code>/bowl 100</code>\n"
@@ -160,7 +157,7 @@ def send_games_list(message):
         f"🎯 <b>Dart:</b> <code>/dart 100</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
         f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code>\n"
-        f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code>\n"
+        f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code> (Bet > ₹20 auto crashes before target)\n"
         f"🎰 <b>Slots:</b> <code>/slots 100 3</code>"
     )
 
@@ -170,7 +167,7 @@ def check_wallet(message):
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
 
 # -------------------------------------------------------------
-# SOLO GAMES (/dr, /limbo, /slots)
+# SOLO GAMES (/dr, /limbo, /slots) WITH UPDATED LIMBO RULE
 # -------------------------------------------------------------
 @bot.message_handler(commands=['dr', 'dicerush'])
 def cmd_dice_rush(message):
@@ -243,16 +240,35 @@ def cmd_limbo(message):
         if balance < amount:
             bot.reply_to(message, "❌ Insufficient balance!")
             return
+        
         USER_BALANCES[user_id] -= amount
-        actual_multiplier = round(random.uniform(1.00, 3.00), 2)
-        win = actual_multiplier >= target
+
+        # NEW RULE: If bet amount > 20, force crash before target
+        if amount > 20.0:
+            if target > 1.01:
+                actual_multiplier = round(random.uniform(1.00, target - 0.01), 2)
+            else:
+                actual_multiplier = 1.00
+            win = False
+        else:
+            actual_multiplier = round(random.uniform(1.00, 3.00), 2)
+            win = actual_multiplier >= target
+
         if win:
             payout = amount * target
             USER_BALANCES[user_id] += payout
             res = f"🎉 <b>WON!</b> Multiplier: {actual_multiplier}x (Won ₹{payout:.2f})"
         else:
             res = f"💥 <b>CRASHED!</b> Multiplier: {actual_multiplier}x"
-        bot.reply_to(message, f"{res}\n💳 Balance: ₹{get_balance(user_id):.2f}")
+        
+        try:
+            bot.send_photo(
+                message.chat.id, 
+                LIMBO_IMAGE_URL, 
+                caption=f"🚀 <b>LIMBO GAME</b>\nTarget: {target}x\n{res}\n💳 Balance: ₹{get_balance(user_id):.2f}"
+            )
+        except Exception:
+            bot.reply_to(message, f"{res}\n💳 Balance: ₹{get_balance(user_id):.2f}")
     except Exception as e: logging.error(f"Limbo Error: {e}")
 
 @bot.message_handler(commands=['slots', 'slot'])
@@ -388,7 +404,6 @@ def handle_pvp_callbacks(call):
             match["status"] = "PLAYING"
 
         elif action == "throw":
-            # Manual throw button clicked by the active player
             turn_player = match["p1_id"] if match["turn"] == "p1" else match["p2_id"]
             if user_id != turn_player:
                 bot.answer_callback_query(call.id, "❌ Abhi aapki baari nahi hai!", show_alert=True)
@@ -398,7 +413,6 @@ def handle_pvp_callbacks(call):
             execute_single_throw(call.message.chat.id, call.message.message_id, match_id)
             return
 
-        # Match start hone par pehla throw button dikhayein
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(f"🎲 {match['p1_name']} Throw (Round 1/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
 
@@ -419,7 +433,6 @@ def execute_single_throw(chat_id, message_id, match_id):
     current_turn = match["turn"]
     round_no = match["current_round"]
     
-    # Telegram par dice bhejkar value nikalna
     msg = bot.send_dice(chat_id, emoji=match["emoji"])
     val = msg.dice.value
 
@@ -432,23 +445,18 @@ def execute_single_throw(chat_id, message_id, match_id):
 
     bot.send_message(chat_id, f"🎯 <b>{player_name}</b> (Round {round_no}/{match['rounds']}) ne feka ➡️ <b>{val}</b>")
 
-    # Next turn logic check karein
     if current_turn == "p1":
-        # Check if P1 finished all rounds
         if len(match["p1_scores"]) < match["rounds"]:
-            # P1 has more rounds left
             match["current_round"] += 1
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton(f"🎲 {match['p1_name']} Throw (Round {match['current_round']}/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
             bot.send_message(chat_id, f"👉 <b>{match['p1_name']}</b>, agla round khelein:", reply_markup=markup)
         else:
-            # P1 finished all rounds, switch to P2 / Bot
             match["turn"] = "p2"
             match["current_round"] = 1
             
             if match["is_bot"]:
                 bot.send_message(chat_id, f"🤖 <b>{match['p2_name']}</b> apni baari khud khel raha hai...")
-                # Bot saare rounds automatic ek-ek karke khelega
                 for r in range(1, match["rounds"] + 1):
                     time.sleep(1.2)
                     bot_msg = bot.send_dice(chat_id, emoji=match["emoji"])
@@ -456,21 +464,18 @@ def execute_single_throw(chat_id, message_id, match_id):
                     match["p2_scores"].append(b_val)
                     bot.send_message(chat_id, f"🤖 Round {r}: {match['p2_name']} ne feka ➡️ <b>{b_val}</b>")
                 
-                # Bot ke baad direct match finalize karein
                 finalize_match(chat_id, match_id)
             else:
                 markup = InlineKeyboardMarkup()
                 markup.add(InlineKeyboardButton(f"🎲 {match['p2_name']} Throw (Round 1/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
                 bot.send_message(chat_id, f"👉 Ab <b>{match['p2_name']}</b> ki baari hai! Neeche button dabakar apna throw karein:", reply_markup=markup)
     else:
-        # P2 turn
         if len(match["p2_scores"]) < match["rounds"]:
             match["current_round"] += 1
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton(f"🎲 {match['p2_name']} Throw (Round {match['current_round']}/{match['rounds']})", callback_data=f"pvp_throw_{match_id}"))
             bot.send_message(chat_id, f"👉 <b>{match['p2_name']}</b>, agla round khelein:", reply_markup=markup)
         else:
-            # P2 finished all rounds, finalize match
             finalize_match(chat_id, match_id)
 
 def finalize_match(chat_id, match_id):
