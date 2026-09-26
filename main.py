@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAEX9RPVrr5c1o_rGZCteZokmf2lKXsh-TA"
+BOT_TOKEN = "8728557922:AAHxJzAY_dY7kBj83YZTYyQBBhHZYRJKdAc"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -53,55 +53,66 @@ def get_balance(user_id):
         USER_BALANCES[user_id] = 0.0
     return USER_BALANCES[user_id]
 
-def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
+def parse_pvp_args(args, user_id):
+    """PVP/Bot games ke liye arguments parse karta hai. Agar rounds nahi diye toh default 1 set karega."""
     if len(args) < 1:
-        return None, None, "⚠️ Amount aur Target/Round mention karein!"
+        return None, None, "⚠️ Amount mention karein! (Example: <code>/bowl 100</code> ya <code>/bowl 100 3</code>)"
 
     balance = get_balance(user_id)
     val1 = args[0].lower()
     val2 = args[1].lower() if len(args) > 1 else None
 
     amount = None
-    target_num = None
+    rounds = 1
 
     if val1 == "all":
         amount = balance
         if val2:
-            try: target_num = int(val2)
+            try: rounds = int(val2)
             except ValueError: pass
     elif val2 == "all":
         amount = balance
-        try: target_num = int(val1)
+        try: rounds = int(val1)
         except ValueError: pass
     else:
         for v in [val1, val2]:
             if v is not None:
                 try:
                     n = float(v)
-                    if min_num <= n <= max_num and target_num is None and n.is_integer():
-                        target_num = int(n)
-                    elif amount is None:
+                    # Agar value 1 se 5 ke beech hai aur integer hai, toh woh rounds ho sakta hai
+                    if 1 <= n <= 5 and rounds == 1 and n.is_integer() and amount is not None:
+                        rounds = int(n)
+                    elif 1 <= n <= 5 and amount is None and n.is_integer():
+                        # Agar pehle chota number aaya hai toh use round maan sakte hain ya amount
+                        # Let's check structure: /bowl 100 3 -> amount=100, rounds=3
+                        pass
+                    if amount is None:
                         amount = n
+                    else:
+                        try:
+                            maybe_rounds = int(v)
+                            if 1 <= maybe_rounds <= 5:
+                                rounds = maybe_rounds
+                        except:
+                            pass
                 except ValueError:
                     pass
 
-    if amount is not None and target_num is None:
-        target_num = 1
-
-    if amount is None or target_num is None:
-        try:
-            p1, p2 = float(val1), float(val2)
-            if min_num <= p1 <= max_num and p1.is_integer():
-                target_num = int(p1)
-                amount = p2
+    # Safer precise parsing for 2 args like /bowl 100 3 or /bowl 3 100
+    try:
+        if len(args) >= 2:
+            p1, p2 = float(args[0]), float(args[1])
+            if 1 <= p1 <= 5 and p1.is_integer() and p2 > 5:
+                rounds, amount = int(p1), p2
+            elif 1 <= p2 <= 5 and p2.is_integer() and p1 > 5:
+                rounds, amount = int(p2), p1
             else:
-                target_num = int(p2)
-                amount = int(p1) if p1.is_integer() else p1
-        except Exception:
-            if amount is not None:
-                target_num = 1
-            else:
-                return None, None, f"❌ Valid Range: {min_num} - {max_num}"
+                amount, rounds = p1, int(p2) if p2.is_integer() else 1
+        elif len(args) == 1:
+            amount = float(args[0])
+            rounds = 1
+    except Exception:
+        pass
 
     if amount is None or amount <= 0:
         return None, None, "❌ Invalid Amount!"
@@ -111,8 +122,10 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
         return None, None, f"❌ Maximum bet ₹{MAX_BET:.0f} hai!"
     if balance < amount or balance == 0:
         return None, None, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai."
+    if rounds < 1 or rounds > 5:
+        return None, None, "❌ Rounds 1 se 5 ke beech hone chahiye!"
 
-    return amount, target_num, None
+    return amount, rounds, None
 
 def parse_amount_and_choice(args, user_id, valid_choices=None):
     if len(args) < 2:
@@ -217,11 +230,11 @@ def send_games_list(message):
         f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code>\n"
         f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code>\n"
         f"🏦 <b>Bot Fund:</b> <code>/hb</code>\n\n"
-        f"⚔️ <b>PVP / BOT MULTI-ROUND GAMES:</b>\n"
-        f"🎲 <b>Dice:</b> <code>/dice 100 3</code>\n"
-        f"🎳 <b>Bowling:</b> <code>/bowl 100 3</code>\n"
-        f"🏀 <b>Basketball:</b> <code>/basketball 100 3</code>\n"
-        f"🎯 <b>Dart:</b> <code>/dart 100 3</code>\n\n"
+        f"⚔️ <b>PVP / BOT GAMES (Auto 1 round if not specified):</b>\n"
+        f"🎲 <b>Dice:</b> <code>/dice 100</code> ya <code>/dice 100 3</code>\n"
+        f"🎳 <b>Bowling:</b> <code>/bowl 100</code> ya <code>/bowl 100 3</code>\n"
+        f"🏀 <b>Basketball:</b> <code>/basketball 100</code> ya <code>/basketball 100 3</code>\n"
+        f"🎯 <b>Dart:</b> <code>/dart 100</code> ya <code>/dart 100 3</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
         f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code>\n"
         f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code>\n"
@@ -781,38 +794,13 @@ def cmd_slots(message):
 # -------------------------------------------------------------
 # PVP & BOT MULTI-ROUND TURN GAMES (/dice, /bowl, /basketball, /dart)
 # -------------------------------------------------------------
-def create_pvp_challenge(message, game_type, emoji, min_val=1, max_val=6):
+def create_pvp_challenge(message, game_type, emoji):
     user_id = message.from_user.id
     args = message.text.split()[1:]
 
-    if len(args) < 2:
-        bot.reply_to(message, f"⚠️ Usage: <code>/{game_type} [amount] [rounds]</code>\nExample: <code>/{game_type} 100 3</code>")
-        return
-
-    try:
-        v1, v2 = float(args[0]), float(args[1])
-        if v1 <= 5 and v2 > 5:
-            rounds, amount = int(v1), v2
-        elif v2 <= 5 and v1 > 5:
-            rounds, amount = int(v2), v1
-        else:
-            amount, rounds = v1, int(v2)
-    except ValueError:
-        bot.reply_to(message, "❌ Valid numbers enter karein!")
-        return
-
-    balance = get_balance(user_id)
-    if amount < MIN_BET:
-        bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
-        return
-    if amount > MAX_BET:
-        bot.reply_to(message, f"❌ Maximum bet ₹{MAX_BET:.0f} hai!")
-        return
-    if balance < amount or balance == 0:
-        bot.reply_to(message, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai.")
-        return
-    if rounds < 1 or rounds > 5:
-        bot.reply_to(message, "❌ Rounds 1 se 5 ke beech hone chahiye!")
+    amount, rounds, err = parse_pvp_args(args, user_id)
+    if err:
+        bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/{game_type} 100</code> ya <code>/{game_type} 100 3</code>")
         return
 
     USER_BALANCES[user_id] -= amount
@@ -839,30 +827,30 @@ def create_pvp_challenge(message, game_type, emoji, min_val=1, max_val=6):
 
     bot.reply_to(
         message,
-        f"⚔️ <b>{game_type.upper()} MULTI-ROUND MATCH!</b> {emoji}\n\n"
+        f"⚔️ <b>{game_type.upper()} MATCH!</b> {emoji}\n\n"
         f"👤 <b>Challenger:</b> {message.from_user.first_name}\n"
         f"🔄 <b>Total Rounds:</b> {rounds}\n"
         f"💰 <b>Bet Amount:</b> ₹{amount:.2f}\n"
         f"🏆 <b>Total Pot:</b> ₹{(amount * 2):.2f}\n\n"
-        f"<i>Group member accept karein ya 'Play with Bot' dabein! (Pehle Player saare rounds khelega, fir Opponent)</i>",
+        f"<i>Group member accept karein ya 'Play with Bot' dabein! (Pehle Player khelega, fir Opponent)</i>",
         reply_markup=markup
     )
 
 @bot.message_handler(commands=['dice'])
 def cmd_pvp_dice(message):
-    create_pvp_challenge(message, "dice", "🎲", 1, 6)
+    create_pvp_challenge(message, "dice", "🎲")
 
 @bot.message_handler(commands=['bowl', 'bowling'])
 def cmd_pvp_bowl(message):
-    create_pvp_challenge(message, "bowl", "🎳", 1, 6)
+    create_pvp_challenge(message, "bowl", "🎳")
 
 @bot.message_handler(commands=['basketball', 'bb'])
 def cmd_pvp_bb(message):
-    create_pvp_challenge(message, "basketball", "🏀", 1, 5)
+    create_pvp_challenge(message, "basketball", "🏀")
 
 @bot.message_handler(commands=['dart'])
 def cmd_pvp_dart(message):
-    create_pvp_challenge(message, "dart", "🎯", 1, 6)
+    create_pvp_challenge(message, "dart", "🎯")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("pvp_"))
 def handle_pvp_callbacks(call):
@@ -921,32 +909,30 @@ def handle_pvp_callbacks(call):
             message_id=call.message.message_id
         )
 
-        # --- STEP 1: PLAYER 1 TURNS ---
-        bot.send_message(call.message.chat.id, f"🔴 <b>{match['p1_name']}</b> apni baari ke saare {match['rounds']} rounds khel raha hai...")
+        chat_id = call.message.chat.id
+
+        # --- STEP 1: PLAYER 1 TURNS (Har round ke liye alag se dice feka jayega) ---
+        bot.send_message(chat_id, f"🔴 <b>{match['p1_name']}</b> ki baari hai (Total {match['rounds']} rounds)...")
         p1_scores = []
         for r in range(1, match['rounds'] + 1):
-            time.sleep(1)
-            msg = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
-            p1_scores.append(msg.dice.value)
-            bot.send_message(call.message.chat.id, f"🔴 Round {r}: {match['p1_name']} scored <b>{msg.dice.value}</b>")
+            time.sleep(1.2)
+            msg = bot.send_dice(chat_id, emoji=match["emoji"])
+            val = msg.dice.value
+            p1_scores.append(val)
+            bot.send_message(chat_id, f"🔴 Round {r}: {match['p1_name']} ne feka ➡️ <b>{val}</b>")
 
         p1_total = sum(p1_scores)
         time.sleep(1.5)
 
-        # --- STEP 2: PLAYER 2 / BOT TURNS ---
-        bot.send_message(call.message.chat.id, f"🔵 <b>{match['p2_name']}</b> apni baari ke saare {match['rounds']} rounds khel raha hai...")
+        # --- STEP 2: PLAYER 2 / BOT TURNS (Har round ke liye alag se dice feka jayega) ---
+        bot.send_message(chat_id, f"🔵 <b>{match['p2_name']}</b> ki baari hai (Total {match['rounds']} rounds)...")
         p2_scores = []
         for r in range(1, match['rounds'] + 1):
-            time.sleep(1)
-            if p2_is_bot:
-                max_val = 5 if match["emoji"] == "🏀" else 6
-                msg = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
-                val = msg.dice.value
-            else:
-                msg = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
-                val = msg.dice.value
+            time.sleep(1.2)
+            msg = bot.send_dice(chat_id, emoji=match["emoji"])
+            val = msg.dice.value
             p2_scores.append(val)
-            bot.send_message(call.message.chat.id, f"🔵 Round {r}: {match['p2_name']} scored <b>{val}</b>")
+            bot.send_message(chat_id, f"🔵 Round {r}: {match['p2_name']} ne feka ➡️ <b>{val}</b>")
 
         p2_total = sum(p2_scores)
         total_pot = match["amount"] * 2.0
@@ -971,7 +957,7 @@ def handle_pvp_callbacks(call):
                 USER_BALANCES[match["p2_id"]] += match["amount"]
             result_text = f"🤝 <b>MATCH TIED!</b>\n\n{result_summary}💰 Both players got refund."
 
-        bot.send_message(call.message.chat.id, result_text)
+        bot.send_message(chat_id, result_text)
         del PVP_MATCHES[match_id]
     except Exception as e:
         logging.error(f"PvP CB Error: {e}")
