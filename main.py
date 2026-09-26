@@ -40,8 +40,26 @@ ESCROW_DEALS = {}
 BOT_ACTIVE = True
 
 # -------------------------------------------------------------
-# HELPER FUNCTIONS
+# DECORATORS & HELPERS
 # -------------------------------------------------------------
+def restricted_command(func):
+    def wrapper(message, *args, **kwargs):
+        user_id = message.from_user.id
+        if user_id != ADMIN_ID and not BOT_ACTIVE:
+            bot.reply_to(message, "⚠️ <b>Bot is currently stopped by the Admin.</b> Please try again later.")
+            return
+        return func(message, *args, **kwargs)
+    return wrapper
+
+def restricted_callback(func):
+    def wrapper(call, *args, **kwargs):
+        user_id = call.from_user.id
+        if user_id != ADMIN_ID and not BOT_ACTIVE:
+            bot.answer_callback_query(call.id, "❌ Bot is currently stopped by Admin!", show_alert=True)
+            return
+        return func(call, *args, **kwargs)
+    return wrapper
+
 def get_balance(user_id):
     if user_id not in USER_BALANCES:
         USER_BALANCES[user_id] = 0.0
@@ -90,23 +108,44 @@ def parse_pvp_args(args, user_id):
     return amount, rounds, None
 
 # -------------------------------------------------------------
-# START & ADMIN COMMANDS
+# START, STOP & ADMIN COMMANDS
 # -------------------------------------------------------------
 @bot.message_handler(commands=['start'])
 def send_start(message):
     try:
+        global BOT_ACTIVE
         user_id = message.from_user.id
         user_name = message.from_user.full_name
 
         if user_id == ADMIN_ID:
+            BOT_ACTIVE = True
             markup = InlineKeyboardMarkup()
-            btn_status = InlineKeyboardButton("🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", callback_data="admin_toggle_bot")
+            btn_status = InlineKeyboardButton("🔴 Stop Bot", callback_data="admin_toggle_bot")
             markup.add(btn_status)
-            bot.reply_to(message, f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\nStatus: {'🟢 ACTIVE' if BOT_ACTIVE else '🔴 STOPPED'}\n\n• <code>/addbal user_id amount</code>", reply_markup=markup)
+            bot.reply_to(message, f"🟢 <b>Bot is now STARTED & ACTIVE!</b>\n\n🎰 <b>{BOT_NAME} ADMIN PANEL</b>\nStatus: ACTIVE\n\n• <code>/addbal user_id amount</code>", reply_markup=markup)
         else:
+            if not BOT_ACTIVE:
+                bot.reply_to(message, "⚠️ <b>Bot is currently stopped by the Admin.</b> Please try again later.")
+                return
             bot.reply_to(message, f"🎰 Welcome <b>{user_name}</b> to <b>{BOT_NAME}</b>!\n\n🎮 Games list dekhne ke liye <code>/games</code> type karein.")
     except Exception as e:
         logging.error(f"Start Error: {e}")
+
+@bot.message_handler(commands=['stop'])
+def send_stop(message):
+    try:
+        global BOT_ACTIVE
+        user_id = message.from_user.id
+        if user_id == ADMIN_ID:
+            BOT_ACTIVE = False
+            markup = InlineKeyboardMarkup()
+            btn_status = InlineKeyboardButton("🟢 Start Bot", callback_data="admin_toggle_bot")
+            markup.add(btn_status)
+            bot.reply_to(message, f"🔴 <b>Bot is now STOPPED!</b>\n\nNo users can play games now. Type <code>/start</code> to resume.", reply_markup=markup)
+        else:
+            bot.reply_to(message, "❌ You are not authorized to stop the bot.")
+    except Exception as e:
+        logging.error(f"Stop Error: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_toggle_bot")
 def handle_admin_toggle(call):
@@ -118,6 +157,7 @@ def handle_admin_toggle(call):
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🔴 Stop Bot" if BOT_ACTIVE else "🟢 Start Bot", callback_data="admin_toggle_bot"))
         bot.edit_message_text(f"🎰 <b>{BOT_NAME} ADMIN PANEL</b>\n\nStatus: {status_text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+        bot.answer_callback_query(call.id, f"Bot status changed to {status_text}")
     except Exception as e:
         logging.error(f"Toggle Error: {e}")
 
@@ -139,6 +179,7 @@ def admin_add_balance(message):
 # BOT FUND (/hb)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['hb'])
+@restricted_command
 def send_bot_fund(message):
     bot.reply_to(
         message,
@@ -151,6 +192,7 @@ def send_bot_fund(message):
 # DEPOSIT & WITHDRAWAL SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['deposit'])
+@restricted_command
 def cmd_deposit(message):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("📥 Enter Deposit Amount", callback_data="dep_amount"))
@@ -164,6 +206,7 @@ def cmd_deposit(message):
     )
 
 @bot.message_handler(commands=['withdraw'])
+@restricted_command
 def cmd_withdraw(message):
     user_id = message.from_user.id
     current_upi = USER_UPI_IDS.get(user_id, "Not Set")
@@ -184,6 +227,7 @@ def cmd_withdraw(message):
     )
 
 @bot.callback_query_handler(func=lambda call: call.data in ["dep_amount", "wd_set_upi", "wd_amount"])
+@restricted_callback
 def handle_wallet_callbacks(call):
     user_id = call.from_user.id
     if call.data == "dep_amount":
@@ -206,6 +250,7 @@ def handle_wallet_callbacks(call):
 # ESCROW & TIP SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['escrow'])
+@restricted_command
 def cmd_escrow(message):
     try:
         if not message.reply_to_message:
@@ -256,6 +301,7 @@ def cmd_escrow(message):
         logging.error(f"Escrow Error: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("esc_"))
+@restricted_callback
 def handle_escrow_callbacks(call):
     data = call.data.split("_")
     action = data[1]
@@ -281,6 +327,7 @@ def handle_escrow_callbacks(call):
     del ESCROW_DEALS[deal_id]
 
 @bot.message_handler(commands=['tip'])
+@restricted_command
 def cmd_tip(message):
     try:
         if not message.reply_to_message:
@@ -323,6 +370,9 @@ def cmd_tip(message):
 @bot.message_handler(func=lambda msg: msg.from_user.id in USER_WAITING_STATE)
 def handle_text_inputs(message):
     user_id = message.from_user.id
+    if user_id != ADMIN_ID and not BOT_ACTIVE:
+        return
+        
     state = USER_WAITING_STATE[user_id]
     text = message.text.strip()
 
@@ -367,6 +417,7 @@ def handle_text_inputs(message):
 # MENU & WALLET SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
+@restricted_command
 def send_games_list(message):
     bot.reply_to(
         message, 
@@ -381,6 +432,7 @@ def send_games_list(message):
     )
 
 @bot.message_handler(commands=['wallet', 'bal'])
+@restricted_command
 def check_wallet(message):
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
@@ -389,6 +441,7 @@ def check_wallet(message):
 # SOLO GAMES (/dr, /limbo with PIL image card, /slots)
 # -------------------------------------------------------------
 @bot.message_handler(commands=['dr', 'dicerush'])
+@restricted_command
 def cmd_dice_rush(message):
     try:
         user_id = message.from_user.id
@@ -447,6 +500,7 @@ def cmd_dice_rush(message):
     except Exception as e: logging.error(f"DR Error: {e}")
 
 @bot.message_handler(commands=['limbo'])
+@restricted_command
 def cmd_limbo(message):
     try:
         user_id = message.from_user.id
@@ -517,6 +571,7 @@ def cmd_limbo(message):
         bot.reply_to(message, f"⚠️ An error occurred: {e}")
 
 @bot.message_handler(commands=['slots', 'slot'])
+@restricted_command
 def cmd_slots(message):
     try:
         user_id = message.from_user.id
@@ -586,22 +641,27 @@ def create_pvp_challenge(message, game_type, emoji):
     )
 
 @bot.message_handler(commands=['dice'])
+@restricted_command
 def cmd_pvp_dice(message):
     create_pvp_challenge(message, "dice", "🎲")
 
 @bot.message_handler(commands=['bowl', 'bowling'])
+@restricted_command
 def cmd_pvp_bowl(message):
     create_pvp_challenge(message, "bowl", "🎳")
 
 @bot.message_handler(commands=['basketball', 'bb'])
+@restricted_command
 def cmd_pvp_bb(message):
     create_pvp_challenge(message, "basketball", "🏀")
 
 @bot.message_handler(commands=['dart'])
+@restricted_command
 def cmd_pvp_dart(message):
     create_pvp_challenge(message, "dart", "🎯")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("pvp_"))
+@restricted_callback
 def handle_pvp_callbacks(call):
     try:
         data = call.data.split("_")
