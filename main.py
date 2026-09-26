@@ -256,8 +256,6 @@ def handle_deposit_screenshot(message):
         if user_id != ADMIN_ID and not BOT_ACTIVE:
             return
 
-        # Check if user was waiting to send a screenshot/deposit
-        # Hum user ki state clear kar dete hain aur screenshot admin ko bhejte hain
         file_id = message.photo[-1].file_id
         user_name = message.from_user.full_name
         username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
@@ -270,7 +268,6 @@ def handle_deposit_screenshot(message):
             f"<code>/addbal {user_id} [amount]</code>"
         )
 
-        # Send screenshot to Admin
         bot.send_photo(ADMIN_ID, file_id, caption=caption_text, parse_mode="HTML")
         bot.reply_to(message, "✅ <b>Screenshot successfully sent to Admin!</b>\nAdmin verify karne ke baad aapke wallet me balance add kar denge.")
         
@@ -399,7 +396,7 @@ def cmd_tip(message):
         logging.error(f"Tip Error: {e}")
 
 # -------------------------------------------------------------
-# TEXT INPUT HANDLER
+# TEXT INPUT HANDLER & WITHDRAWAL APPROVAL BUTTONS
 # -------------------------------------------------------------
 @bot.message_handler(func=lambda msg: msg.from_user.id in USER_WAITING_STATE)
 def handle_text_inputs(message):
@@ -439,11 +436,88 @@ def handle_text_inputs(message):
                 bot.reply_to(message, "❌ Insufficient balance!")
                 return
             
-            USER_BALANCES[user_id] -= amount
             upi = USER_UPI_IDS.get(user_id)
-            bot.reply_to(message, f"📤 <b>Withdrawal Request Placed!</b>\n💰 Amount: ₹{amount:.2f}\n💳 UPI: <code>{upi}</code>")
+            if not upi or upi == "Not Set":
+                bot.reply_to(message, "❌ Pehle apna UPI ID set karein using /withdraw -> Set UPI")
+                return
+
+            # Deduct balance from user
+            USER_BALANCES[user_id] -= amount
+            
+            # Notify User
+            bot.reply_to(message, f"📤 <b>Withdrawal Request Placed!</b>\n💰 Amount: ₹{amount:.2f}\n💳 UPI: <code>{upi}</code>\n\nAdmin jald hi payment bhej denge.")
+            
+            # 🚀 NOTIFY ADMIN WITH APPROVAL & REJECTION BUTTONS
+            user_name = message.from_user.full_name
+            username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
+            
+            admin_msg = (
+                f"💸 <b>NEW WITHDRAWAL REQUEST!</b>\n\n"
+                f"👤 User: {user_name} ({username})\n"
+                f"🆔 ID: <code>{user_id}</code>\n"
+                f"💰 Amount: <b>₹{amount:.2f}</b>\n"
+                f"💳 UPI ID: <code>{upi}</code>"
+            )
+
+            markup = InlineKeyboardMarkup()
+            markup.add(
+                InlineKeyboardButton("✅ Approve", callback_data=f"wd_app_{user_id}_{amount}"),
+                InlineKeyboardButton("❌ Reject & Refund", callback_data=f"wd_rej_{user_id}_{amount}")
+            )
+
+            bot.send_message(ADMIN_ID, admin_msg, parse_mode="HTML", reply_markup=markup)
+
         except ValueError:
             bot.reply_to(message, "❌ Invalid amount!")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("wd_app_") or call.data.startswith("wd_rej_"))
+@restricted_callback
+def handle_withdrawal_actions(call):
+    try:
+        data = call.data.split("_")
+        action = data[1] # app or rej
+        target_user_id = int(data[2])
+        amount = float(data[3])
+
+        if action == "app":
+            bot.edit_message_text(
+                f"{call.message.text}\n\n<b>Status: ✅ APPROVED & PAID BY ADMIN</b>",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode="HTML"
+            )
+            bot.answer_callback_query(call.id, "Withdrawal Approved!")
+            try:
+                bot.send_message(
+                    target_user_id,
+                    f"🎉 <b>Your withdrawal of ₹{amount:.2f} has been APPROVED!</b>\n"
+                    f"Payment successfully bhej di gayi hai aapke UPI par."
+                )
+            except Exception:
+                pass
+
+        elif action == "rej":
+            # Refund balance back to user
+            USER_BALANCES[target_user_id] = get_balance(target_user_id) + amount
+            bot.edit_message_text(
+                f"{call.message.text}\n\n<b>Status: ❌ REJECTED & REFUNDED</b>",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode="HTML"
+            )
+            bot.answer_callback_query(call.id, "Withdrawal Rejected & Refunded!")
+            try:
+                bot.send_message(
+                    target_user_id,
+                    f"❌ <b>Your withdrawal request of ₹{amount:.2f} was REJECTED by Admin.</b>\n"
+                    f"Paisa aapke wallet me wapas refund kar diya gaya hai."
+                )
+            except Exception:
+                pass
+
+    except Exception as e:
+        logging.error(f"Withdrawal Action Error: {e}")
+        bot.answer_callback_query(call.id, "❌ Error processing request!", show_alert=True)
 
 # -------------------------------------------------------------
 # MENU & WALLET SYSTEM
@@ -562,7 +636,6 @@ def cmd_limbo(message):
             
         updated_bal = get_balance(user_id)
 
-        # Fast local PIL Image generation with text printed on it
         img = Image.new('RGB', (600, 350), color=(15, 15, 25))
         d = ImageDraw.Draw(img)
         
