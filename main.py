@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAHMLcnLbUK0ifsXCEYaOK0DxE2iAtdIxtc"
+BOT_TOKEN = "8728557922:AAFCGy0PgjcNUJ78bt7WOpbSd5xRvt7cJ10"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -444,11 +444,15 @@ def cmd_limbo(message):
         if win:
             payout = amount * target
             USER_BALANCES[user_id] += payout
-            status_text = f"WIN: +₹{payout:.2f}"
+            status_text = "WIN"
+            payout_text = f"₹{payout:.2f}"
+            color_status = (0, 255, 0)
         else:
-            status_text = f"LOST: -₹{amount:.2f}"
+            status_text = "LOSS"
+            payout_text = "₹0.00"
+            color_status = (255, 0, 0)
 
-        # Image par text draw karna (Pillow)
+        # Image ke upar text draw karne ki koshish (Pillow)
         try:
             file_info = bot.get_file(LIMBO_IMAGE_URL)
             downloaded_file = bot.download_file(file_info.file_path)
@@ -456,15 +460,22 @@ def cmd_limbo(message):
             img = Image.open(BytesIO(downloaded_file)).convert("RGB")
             draw = ImageDraw.Draw(img)
             
+            # Safe default font loading
             try:
-                font = ImageFont.truetype("arial.ttf", 28)
+                font_big = ImageFont.truetype("arial.ttf", 60)
+                font_small = ImageFont.truetype("arial.ttf", 26)
             except IOError:
-                font = ImageFont.load_default()
+                font_big = ImageFont.load_default()
+                font_small = ImageFont.load_default()
 
-            draw.text((50, 50), f"Target: {target:.2f}x", fill=(255, 255, 255), font=font)
-            draw.text((50, 90), f"Rolled: {actual_multiplier:.2f}x", fill=(255, 255, 0) if win else (255, 100, 100), font=font)
-            draw.text((50, 130), status_text, fill=(0, 255, 0) if win else (255, 0, 0), font=font)
+            # Image ke center me Rolled Multiplier likhna
+            draw.text((360, 420), f"{actual_multiplier:.2f}x", fill=(255, 255, 255), font=font_big, anchor="mm")
             
+            # Neeche boxes me values likhna (Coordinates)
+            draw.text((200, 785), f"{target:.2f}x", fill=(255, 255, 255), font=font_small, anchor="mm")
+            draw.text((500, 785), status_text, fill=color_status, font=font_small, anchor="mm")
+            draw.text((800, 785), payout_text, fill=(255, 255, 255), font=font_small, anchor="mm")
+
             bio = BytesIO()
             bio.name = 'limbo_result.png'
             img.save(bio, 'PNG')
@@ -478,6 +489,7 @@ def cmd_limbo(message):
             )
         except Exception as img_err:
             logging.error(f"Image Draw Error: {img_err}")
+            # Fallback agar draw fail ho jaye toh normal photo + caption
             fallback_caption = (
                 f"🚀 <b>LIMBO RESULT</b>\n\n"
                 f"🎯 Target: <b>{target:.2f}x</b>\n"
