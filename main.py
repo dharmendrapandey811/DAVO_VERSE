@@ -6,6 +6,8 @@ import threading
 import logging
 import urllib.parse
 import requests
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -14,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAEzmogNXltIKkbcILAiNMuvLKjcGjQAAqI"
+BOT_TOKEN = "8728557922:AAHMLcnLbUK0ifsXCEYaOK0DxE2iAtdIxtc"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -442,27 +444,48 @@ def cmd_limbo(message):
         if win:
             payout = amount * target
             USER_BALANCES[user_id] += payout
-            status = f"🎉 <b>TARGET HIT! (WIN)</b>\n💰 Won: ₹{payout:.2f}"
+            status_text = f"WIN: +₹{payout:.2f}"
         else:
-            status = f"💥 <b>CRASHED BELOW TARGET!</b>\n🔻 Lost: ₹{amount:.2f}"
+            status_text = f"LOST: -₹{amount:.2f}"
 
-        result_caption = (
-            f"🚀 <b>LIMBO RESULT</b>\n\n"
-            f"🎯 Target: <b>{target:.2f}x</b>\n"
-            f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
-            f"{status}\n"
-            f"💳 Balance: ₹{get_balance(user_id):.2f}"
-        )
-
+        # Image par text draw karna (Pillow)
         try:
+            file_info = bot.get_file(LIMBO_IMAGE_URL)
+            downloaded_file = bot.download_file(file_info.file_path)
+            
+            img = Image.open(BytesIO(downloaded_file)).convert("RGB")
+            draw = ImageDraw.Draw(img)
+            
+            try:
+                font = ImageFont.truetype("arial.ttf", 28)
+            except IOError:
+                font = ImageFont.load_default()
+
+            draw.text((50, 50), f"Target: {target:.2f}x", fill=(255, 255, 255), font=font)
+            draw.text((50, 90), f"Rolled: {actual_multiplier:.2f}x", fill=(255, 255, 0) if win else (255, 100, 100), font=font)
+            draw.text((50, 130), status_text, fill=(0, 255, 0) if win else (255, 0, 0), font=font)
+            
+            bio = BytesIO()
+            bio.name = 'limbo_result.png'
+            img.save(bio, 'PNG')
+            bio.seek(0)
+            
             bot.send_photo(
                 chat_id=message.chat.id,
-                photo=LIMBO_IMAGE_URL,
-                caption=result_caption,
+                photo=bio,
+                caption=f"🚀 <b>LIMBO RESULT</b>\n💳 Balance: ₹{get_balance(user_id):.2f}",
                 reply_to_message_id=message.message_id
             )
-        except Exception:
-            bot.reply_to(message, result_caption)
+        except Exception as img_err:
+            logging.error(f"Image Draw Error: {img_err}")
+            fallback_caption = (
+                f"🚀 <b>LIMBO RESULT</b>\n\n"
+                f"🎯 Target: <b>{target:.2f}x</b>\n"
+                f"📈 Rolled: <b>{actual_multiplier:.2f}x</b>\n\n"
+                f"{'🎉 TARGET HIT!' if win else '💥 CRASHED!'}\n"
+                f"💳 Balance: ₹{get_balance(user_id):.2f}"
+            )
+            bot.send_photo(message.chat.id, photo=LIMBO_IMAGE_URL, caption=fallback_caption, reply_to_message_id=message.message_id)
 
     except Exception as e: logging.error(f"Limbo Error: {e}")
 
