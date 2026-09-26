@@ -201,7 +201,7 @@ def cmd_deposit(message):
         message,
         f"💳 <b>DEPOSIT MONEY</b>\n\n"
         f"📍 <b>UPI ID:</b> <code>{UPI_ID}</code>\n"
-        f"📲 Niche diye gaye button par click karke amount enter karein aur payment karke receipt bhejein.",
+        f"📲 Niche diye gaye button par click karke amount enter karein aur payment karke screenshot yahin bhejein.",
         reply_markup=markup
     )
 
@@ -245,6 +245,40 @@ def handle_wallet_callbacks(call):
         USER_WAITING_STATE[user_id] = "waiting_withdraw"
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, f"📤 Kitna amount withdraw karna hai? (Balance: ₹{get_balance(user_id):.2f}):")
+
+# -------------------------------------------------------------
+# SCREENSHOT / PHOTO HANDLER FOR DEPOSIT
+# -------------------------------------------------------------
+@bot.message_handler(content_types=['photo'])
+def handle_deposit_screenshot(message):
+    try:
+        user_id = message.from_user.id
+        if user_id != ADMIN_ID and not BOT_ACTIVE:
+            return
+
+        # Check if user was waiting to send a screenshot/deposit
+        # Hum user ki state clear kar dete hain aur screenshot admin ko bhejte hain
+        file_id = message.photo[-1].file_id
+        user_name = message.from_user.full_name
+        username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
+
+        caption_text = (
+            f"📥 <b>NEW DEPOSIT SCREENSHOT RECEIVED!</b>\n\n"
+            f"👤 User: {user_name} ({username})\n"
+            f"🆔 ID: <code>{user_id}</code>\n\n"
+            f"👉 Balance add karne ke liye command use karein:\n"
+            f"<code>/addbal {user_id} [amount]</code>"
+        )
+
+        # Send screenshot to Admin
+        bot.send_photo(ADMIN_ID, file_id, caption=caption_text, parse_mode="HTML")
+        bot.reply_to(message, "✅ <b>Screenshot successfully sent to Admin!</b>\nAdmin verify karne ke baad aapke wallet me balance add kar denge.")
+        
+        if user_id in USER_WAITING_STATE:
+            del USER_WAITING_STATE[user_id]
+
+    except Exception as e:
+        logging.error(f"Screenshot Error: {e}")
 
 # -------------------------------------------------------------
 # ESCROW & TIP SYSTEM
@@ -384,13 +418,11 @@ def handle_text_inputs(message):
     elif state == "waiting_deposit":
         try:
             amount = float(text)
-            del USER_WAITING_STATE[user_id]
             bot.reply_to(
                 message,
-                f"📥 <b>DEPOSIT REQUEST REGISTERED</b>\n\n"
-                f"💰 Amount: ₹{amount:.2f}\n"
+                f"📥 <b>DEPOSIT AMOUNT NOTIFIED (₹{amount:.2f})</b>\n\n"
                 f"📍 Send payment to UPI: <code>{UPI_ID}</code>\n\n"
-                f"⚠️ <i>Payment karne ke baad payment ki screenshot yahin bhej dein.</i>"
+                f"⚠️ <i>Ab jaldi se payment ka **Screenshot** yahin chat me bhej dein taaki admin verify kar sake.</i>"
             )
         except ValueError:
             bot.reply_to(message, "❌ Invalid amount!")
