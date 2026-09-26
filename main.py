@@ -37,6 +37,7 @@ USER_WAITING_STATE = {}
 PVP_MATCHES = {}
 ACTIVE_GAME_SESSIONS = {}
 ESCROW_DEALS = {}
+ACTIVE_GROUP_USERS = set() # Track active users for rain system
 
 BOT_ACTIVE = True
 
@@ -108,6 +109,13 @@ def parse_pvp_args(args, user_id):
 
     return amount, rounds, None
 
+# Track active group users automatically
+@bot.message_handler(func=lambda msg: True, content_types=['text', 'dice', 'photo', 'video', 'sticker'])
+def track_active_users(message):
+    if message.chat.type in ['group', 'supergroup']:
+        ACTIVE_GROUP_USERS.add(message.from_user.id)
+    return False # Pass to next handlers
+
 # -------------------------------------------------------------
 # START, STOP & ADMIN COMMANDS
 # -------------------------------------------------------------
@@ -175,6 +183,85 @@ def admin_add_balance(message):
         except Exception: pass
     except Exception:
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
+
+# -------------------------------------------------------------
+# RAIN SYSTEM COMMAND (/rain amount members)
+# -------------------------------------------------------------
+@bot.message_handler(commands=['rain'])
+@restricted_command
+def cmd_rain(message):
+    try:
+        if message.chat.type not in ['group', 'supergroup']:
+            bot.reply_to(message, "⚠️ <b>/rain command can only be used in groups!</b>")
+            return
+
+        user_id = message.from_user.id
+        args = message.text.split()[1:]
+
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Usage: <code>/rain 1000 5</code> (Amount, Members)")
+            return
+
+        try:
+            total_amount = float(args[0])
+            num_members = int(args[1])
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid format! Example: <code>/rain 1000 5</code>")
+            return
+
+        if total_amount <= 0:
+            bot.reply_to(message, "❌ Rain amount must be greater than 0!")
+            return
+
+        if not (1 <= num_members <= 100):
+            bot.reply_to(message, "❌ Members count must be between 1 and 100!")
+            return
+
+        balance = get_balance(user_id)
+        if balance < total_amount:
+            bot.reply_to(message, f"❌ <b>Insufficient Balance!</b> You have ₹{balance:.2f}, but you are trying to rain ₹{total_amount:.2f}.")
+            return
+
+        # Eligible users (excluding sender if needed, or including active group users)
+        eligible_users = list(ACTIVE_GROUP_USERS)
+        if user_id in eligible_users:
+            eligible_users.remove(user_id)
+
+        if len(eligible_users) < num_members:
+            bot.reply_to(message, f"❌ Not enough active users in the group! Currently tracked active users: {len(eligible_users)}. Try a smaller member count.")
+            return
+
+        # Deduct balance from sender
+        USER_BALANCES[user_id] -= total_amount
+
+        # Select random members
+        selected_users = random.sample(eligible_users, num_members)
+        amount_per_user = total_amount / num_members
+
+        winners_text = []
+        for uid in selected_users:
+            USER_BALANCES[uid] = get_balance(uid) + amount_per_user
+            try:
+                chat_member = bot.get_chat_member(message.chat.id, uid)
+                name = chat_member.user.first_name
+            except Exception:
+                name = f"User {uid}"
+            winners_text.append(f"• {name}: <b>₹{amount_per_user:.2f}</b>")
+
+        rain_report = (
+            f"🌧️ <b>MONEY RAIN EVENT!</b> 🌧️\n\n"
+            f"👤 <b>Rain By:</b> {message.from_user.first_name}\n"
+            f"💰 <b>Total Rain:</b> ₹{total_amount:.2f}\n"
+            f"👥 <b>Distributed To:</b> {num_members} random members\n"
+            f"💸 <b>Per Person:</b> ₹{amount_per_user:.2f}\n\n"
+            f"🏆 <b>Lucky Winners:</b>\n" + "\n".join(winners_text)
+        )
+
+        bot.reply_to(message, rain_report, parse_mode="HTML")
+
+    except Exception as e:
+        logging.error(f"Rain Error: {e}")
+        bot.reply_to(message, "⚠️ An error occurred while processing rain.")
 
 # -------------------------------------------------------------
 # BOT FUND (/hb)
@@ -540,7 +627,7 @@ def send_games_list(message):
         message, 
         f"🎰 <b>{BOT_NAME} MENU</b> 🎰\n\n"
         f"💳 <b>WALLET:</b> Balance: <code>/wallet</code> | Deposit: <code>/deposit</code> | Withdraw: <code>/withdraw</code>\n"
-        f"❄️ Bot Fund: <code>/hb</code> | Escrow: <code>/escrow 50</code> | Tip: <code>/tip 50</code>\n\n"
+        f"❄️ Bot Fund: <code>/hb</code> | Rain: <code>/rain 1000 5</code> | Escrow: <code>/escrow 50</code> | Tip: <code>/tip 50</code>\n\n"
         f"⚔️ <b>PVP / PVB GAMES:</b> <code>/dice 100</code> | <code>/bowl 100</code> | <code>/basketball 100</code> | <code>/dart 100</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
         f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code>\n"
@@ -880,12 +967,11 @@ def handle_game_dice(message):
                 
                 time.sleep(1.5)
                 for r in range(1, match["rounds"] + 1):
-                    # Bot throws dice/animation directly into the chat like a real player
                     bot.send_message(chat_id, f"🤖 <b>{match['p2_name']} Throw (Round {r}/{match['rounds']})</b>")
                     sent_bot_dice = bot.send_dice(chat_id, emoji=match["emoji"])
                     b_score = sent_bot_dice.dice.value
                     match["p2_scores"].append(b_score)
-                    time.sleep(3.5) # Wait for animation to complete
+                    time.sleep(3.5)
 
                 p1_total = sum(match["p1_scores"])
                 p2_total = sum(match["p2_scores"])
