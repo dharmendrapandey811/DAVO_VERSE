@@ -40,6 +40,7 @@ USER_BALANCES = {}
 USER_UPI_IDS = {}
 USER_WAITING_STATE = {}
 PVP_MATCHES = {}
+ESCROW_DEALS = {}
 PENDING_WITHDRAWALS = {}
 
 BOT_ACTIVE = True
@@ -187,18 +188,19 @@ def admin_add_balance(message):
         bot.reply_to(message, "⚠️ Format: <code>/addbal user_id amount</code>")
 
 # -------------------------------------------------------------
-# MENU, WALLET & TIP SYSTEM
+# MENU, WALLET & ESCROW SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['games', 'help'])
 def send_games_list(message):
     bot.reply_to(
         message, 
         f"🎰 <b>{BOT_NAME} MENU</b> 🎰\n\n"
-        f"💳 <b>FINANCE & TRANSFER:</b>\n"
+        f"💳 <b>FINANCE & ESCROW:</b>\n"
         f"➕ <b>Deposit:</b> <code>/deposit amount</code>\n"
         f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
         f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n"
-        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code> (Ya kisi ke message par reply karke <code>50</code> likhein)\n"
+        f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code> (Ya message par reply karke banayein)\n"
+        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code> (Ya reply karke <code>50</code> likhein)\n"
         f"🏦 <b>Bot Fund:</b> <code>/hb</code>\n\n"
         f"⚔️ <b>PVP / BOT GAMES:</b>\n"
         f"🎲 <b>Dice:</b> <code>/dice 100 4</code>\n"
@@ -216,6 +218,176 @@ def check_wallet(message):
     user_id = message.from_user.id
     bot.reply_to(message, f"💳 <b>WALLET BALANCE:</b> ₹{get_balance(user_id):.2f}\n🆔 ID: <code>{user_id}</code>")
 
+# --- ESCROW COMMAND ---
+@bot.message_handler(commands=['escrow'])
+def cmd_escrow(message):
+    try:
+        user_id = message.from_user.id
+        args = message.text.split()[1:]
+        
+        amount = None
+        if message.reply_to_message and len(args) > 0:
+            try:
+                amount = float(args[0])
+            except ValueError:
+                pass
+        elif len(args) >= 1:
+            try:
+                amount = float(args[0])
+            except ValueError:
+                pass
+
+        if amount is None or amount <= 0:
+            bot.reply_to(message, "⚠️ <b>Usage:</b>\n1. Kisi ke message par reply karke likhein: <code>/escrow 500</code>\n2. Direct likhein: <code>/escrow 500</code>")
+            return
+
+        balance = get_balance(user_id)
+        if balance < amount:
+            bot.reply_to(message, f"❌ Aapke wallet me sufficient balance nahi hai! Current Balance: ₹{balance:.2f}")
+            return
+
+        # Buyer ke account se amount hold (deduct) kar lo
+        USER_BALANCES[user_id] -= amount
+
+        deal_id = f"esc_{user_id}_{int(time.time())}"
+        seller_id = message.reply_to_message.from_user.id if message.reply_to_message else None
+        seller_name = message.reply_to_message.from_user.first_name if message.reply_to_message else "<i>Open Deal (Anyone can accept)</i>"
+
+        ESCROW_DEALS[deal_id] = {
+            "buyer_id": user_id,
+            "buyer_name": message.from_user.first_name,
+            "seller_id": seller_id,
+            "seller_name": seller_name,
+            "amount": amount,
+            "status": "WAITING"
+        }
+
+        markup = InlineKeyboardMarkup()
+        markup.add(
+            InlineKeyboardButton("✅ Accept Deal", callback_data=f"esc_accept_{deal_id}"),
+            InlineKeyboardButton("❌ Cancel Deal", callback_data=f"esc_cancel_{deal_id}")
+        )
+
+        bot.reply_to(
+            message,
+            f"🛡️ <b>SECURE ESCROW CREATED</b>\n\n"
+            f"👤 <b>Buyer:</b> {message.from_user.first_name}\n"
+            f"👤 <b>Seller:</b> {seller_name}\n"
+            f"💰 <b>Escrow Amount:</b> ₹{amount:.2f} (Held safely)\n"
+            f"📊 <b>Status:</b> ⏳ Waiting for Seller\n\n"
+            f"<i>Neeche diye gaye button par click karke deal accept karein!</i>",
+            reply_markup=markup
+        )
+
+    except Exception as e:
+        logging.error(f"Escrow Error: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("esc_"))
+def handle_escrow_callbacks(call):
+    try:
+        data = call.data.split("_")
+        action = data[1]
+        deal_id = "_".join(data[2:])
+        user_id = call.from_user.id
+
+        if deal_id not in ESCROW_DEALS:
+            bot.answer_callback_query(call.id, "❌ Yeh escrow deal exist nahi karti ya complete ho chuki hai!", show_alert=True)
+            return
+
+        deal = ESCROW_DEALS[deal_id]
+
+        if action == "cancel":
+            if user_id != deal["buyer_id"] and user_id != ADMIN_ID:
+                bot.answer_callback_query(call.id, "❌ Sirf Buyer ya Admin deal cancel kar sakta hai!", show_alert=True)
+                return
+            
+            # Refund to buyer
+            USER_BALANCES[deal["buyer_id"]] += deal["amount"]
+            bot.edit_message_text(
+                f"❌ <b>ESCROW CANCELLED!</b>\n\n"
+                f"💰 ₹{deal['amount']:.2f} buyer ke wallet me refund kar diye gaye hain.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            del ESCROW_DEALS[deal_id]
+            return
+
+        elif action == "accept":
+            if deal["seller_id"] and user_id != deal["seller_id"]:
+                bot.answer_callback_query(call.id, "❌ Aap is specific deal ke seller nahi hain!", show_alert=True)
+                return
+            if user_id == deal["buyer_id"]:
+                bot.answer_callback_query(call.id, "❌ Aap apni hi deal accept nahi kar sakte!", show_alert=True)
+                return
+
+            deal["seller_id"] = user_id
+            deal["seller_name"] = call.from_user.first_name
+            deal["status"] = "IN_PROGRESS"
+
+            markup = InlineKeyboardMarkup()
+            markup.add(
+                InlineKeyboardButton("🏆 Release Money to Seller", callback_data=f"esc_release_{deal_id}"),
+                InlineKeyboardButton("⚠️ Raise Dispute", callback_data=f"esc_dispute_{deal_id}")
+            )
+
+            bot.edit_message_text(
+                f"🛡️ <b>ESCROW IN PROGRESS</b>\n\n"
+                f"👤 <b>Buyer:</b> {deal['buyer_name']}\n"
+                f"👤 <b>Seller:</b> {deal['seller_name']}\n"
+                f"💰 <b>Amount:</b> ₹{deal['amount']:.2f}\n"
+                f"📊 <b>Status:</b> 🔄 Deal active hai, kaam pura hone par Buyer release button dabaye.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
+            bot.answer_callback_query(call.id, "✅ Deal successfully accepted!")
+            return
+
+        elif action == "release":
+            if user_id != deal["buyer_id"] and user_id != ADMIN_ID:
+                bot.answer_callback_query(call.id, "❌ Sirf Buyer paise release kar sakta hai!", show_alert=True)
+                return
+
+            # Transfer money to seller
+            USER_BALANCES[deal["seller_id"]] = get_balance(deal["seller_id"]) + deal["amount"]
+
+            bot.edit_message_text(
+                f"✅ <b>ESCROW COMPLETED & RELEASED!</b>\n\n"
+                f"👤 <b>Buyer:</b> {deal['buyer_name']}\n"
+                f"👤 <b>Seller:</b> {deal['seller_name']}\n"
+                f"💰 <b>Amount Transferred:</b> ₹{deal['amount']:.2f}\n"
+                f"🎉 <i>Paise successfully seller ke wallet me bhej diye gaye hain!</i>",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            try:
+                bot.send_message(deal["seller_id"], f"🎉 <b>ESCROW PAYMENT RECEIVED!</b>\n\n💰 ₹{deal['amount']:.2f} aapke wallet me add kar diye gaye hain.")
+            except Exception:
+                pass
+
+            del ESCROW_DEALS[deal_id]
+            return
+
+        elif action == "dispute":
+            if user_id != deal["buyer_id"] and user_id != deal["seller_id"]:
+                bot.answer_callback_query(call.id, "❌ Aap is deal ke member nahi hain!", show_alert=True)
+                return
+
+            bot.edit_message_text(
+                f"🚨 <b>ESCROW DISPUTE RAISED!</b>\n\n"
+                f"👤 <b>Buyer:</b> {deal['buyer_name']}\n"
+                f"👤 <b>Seller:</b> {deal['seller_name']}\n"
+                f"💰 <b>Amount:</b> ₹{deal['amount']:.2f}\n\n"
+                f"⚠️ Admin ko notify kar diya gaya hai. Admin jald hi is deal ko review karega.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            bot.send_message(ADMIN_ID, f"🚨 <b>DISPUTE ALERT!</b> Deal ID: <code>{deal_id}</code> me dispute raise hua hai. Amount: ₹{deal['amount']:.2f}")
+            return
+
+    except Exception as e:
+        logging.error(f"Escrow CB Error: {e}")
+
 @bot.message_handler(commands=['tip'])
 def cmd_tip(message):
     try:
@@ -224,23 +396,19 @@ def cmd_tip(message):
         target_id = None
         amount = None
 
-        # Agar kisi ke message par reply kiya hai
         if message.reply_to_message:
             target_id = message.reply_to_message.from_user.id
             if len(args) > 0:
-                try:
-                    amount = float(args[0])
-                except ValueError:
-                    pass
+                try: amount = float(args[0])
+                except ValueError: pass
         elif len(args) >= 2:
             try:
                 target_id = int(args[0])
                 amount = float(args[1])
-            except ValueError:
-                pass
+            except ValueError: pass
 
         if not target_id or amount is None or amount <= 0:
-            bot.reply_to(message, "⚠️ <b>Usage:</b>\n1. Kisi ke message par reply karke likhein: <code>/tip 50</code> ya sirf <code>50</code>\n2. Direct likhein: <code>/tip user_id amount</code>")
+            bot.reply_to(message, "⚠️ <b>Usage:</b>\n1. Reply to message: <code>/tip 50</code> or just <code>50</code>\n2. Direct: <code>/tip user_id amount</code>")
             return
 
         if target_id == user_id:
@@ -252,7 +420,6 @@ def cmd_tip(message):
             bot.reply_to(message, f"❌ Aapke wallet me itna balance nahi hai! Current Balance: ₹{sender_bal:.2f}")
             return
 
-        # Balance transfer
         USER_BALANCES[user_id] -= amount
         USER_BALANCES[target_id] = get_balance(target_id) + amount
 
@@ -265,7 +432,6 @@ def cmd_tip(message):
             f"💰 Amount: <b>₹{amount:.2f}</b>\n"
             f"💳 Your New Balance: <b>₹{get_balance(user_id):.2f}</b>"
         )
-
         try:
             bot.send_message(
                 target_id,
@@ -274,8 +440,7 @@ def cmd_tip(message):
                 f"💰 Amount: <b>₹{amount:.2f}</b>\n"
                 f"💳 New Balance: <b>₹{get_balance(target_id):.2f}</b>"
             )
-        except Exception:
-            pass
+        except Exception: pass
 
     except Exception as e:
         logging.error(f"Tip Error: {e}")
@@ -781,7 +946,6 @@ def handle_text_and_photos(message):
     try:
         user_id = message.from_user.id
 
-        # Quick Tip via Reply (Agar kisi ke message par reply karke sirf amount likha ho)
         if message.reply_to_message and message.content_type == 'text':
             text_val = message.text.strip()
             try:
@@ -810,11 +974,9 @@ def handle_text_and_photos(message):
                                 f"💰 Amount: <b>₹{amount:.2f}</b>\n"
                                 f"💳 New Balance: <b>₹{get_balance(target_id):.2f}</b>"
                             )
-                        except Exception:
-                            pass
+                        except Exception: pass
                         return
-            except ValueError:
-                pass
+            except ValueError: pass
 
         if user_id in USER_WAITING_STATE:
             state = USER_WAITING_STATE.get(user_id)
