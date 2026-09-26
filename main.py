@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAFfy-IpHnWjGJRnNyrfJa8PuG2jpROxL-0"
+BOT_TOKEN = "8728557922:AAEX9RPVrr5c1o_rGZCteZokmf2lKXsh-TA"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -64,7 +64,6 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
     amount = None
     target_num = None
 
-    # Handle 'all' keyword for amount anywhere in args
     if val1 == "all":
         amount = balance
         if val2:
@@ -75,7 +74,6 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
         try: target_num = int(val1)
         except ValueError: pass
     else:
-        # Normal parsing for numbers
         for v in [val1, val2]:
             if v is not None:
                 try:
@@ -87,7 +85,6 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
                 except ValueError:
                     pass
 
-    # Default rounds to 1 if user only provided amount (e.g. /dice 100)
     if amount is not None and target_num is None:
         target_num = 1
 
@@ -101,7 +98,6 @@ def parse_amount_and_number(args, user_id, min_num=1, max_num=6):
                 target_num = int(p2)
                 amount = int(p1) if p1.is_integer() else p1
         except Exception:
-            # Fallback if target_num wasn't caught but amount is there
             if amount is not None:
                 target_num = 1
             else:
@@ -127,7 +123,6 @@ def parse_amount_and_choice(args, user_id, valid_choices=None):
     amount = None
     choice = None
 
-    # Check for 'all' in either position
     if val1 == "all":
         amount = balance
         if val2 in valid_choices:
@@ -219,18 +214,18 @@ def send_games_list(message):
         f"➕ <b>Deposit:</b> <code>/deposit amount</code>\n"
         f"➖ <b>Withdraw:</b> <code>/withdraw</code>\n"
         f"💳 <b>Wallet Balance:</b> <code>/wallet</code>\n"
-        f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code> (Ya message par reply karke banayein)\n"
-        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code> (Ya reply karke <code>50</code> likhein)\n"
+        f"🛡️ <b>Escrow Deal:</b> <code>/escrow amount</code>\n"
+        f"🎁 <b>Tip User:</b> <code>/tip user_id amount</code>\n"
         f"🏦 <b>Bot Fund:</b> <code>/hb</code>\n\n"
         f"⚔️ <b>PVP / BOT MULTI-ROUND GAMES:</b>\n"
-        f"🎲 <b>Dice:</b> <code>/dice 100</code> (Ya <code>/dice 100 3</code>)\n"
-        f"🎳 <b>Bowling:</b> <code>/bowl 100</code> (Ya <code>/bowl 100 3</code>)\n"
-        f"🏀 <b>Basketball:</b> <code>/basketball 100</code> (Ya <code>/basketball 100 3</code>)\n"
-        f"🎯 <b>Dart:</b> <code>/dart 100</code> (Ya <code>/dart 100 3</code>)\n\n"
+        f"🎲 <b>Dice:</b> <code>/dice 100 3</code>\n"
+        f"🎳 <b>Bowling:</b> <code>/bowl 100 3</code>\n"
+        f"🏀 <b>Basketball:</b> <code>/basketball 100 3</code>\n"
+        f"🎯 <b>Dart:</b> <code>/dart 100 3</code>\n\n"
         f"🕹️ <b>SOLO GAMES:</b>\n"
-        f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code> (Support 'all' also)\n"
-        f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code> (Support 'all')\n"
-        f"🎰 <b>Slots:</b> <code>/slots 100 3</code> (Support 'all')"
+        f"🎲 <b>Dice Rush:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code>\n"
+        f"🚀 <b>Limbo:</b> <code>/limbo 100 2.0</code>\n"
+        f"🎰 <b>Slots:</b> <code>/slots 100 3</code>"
     )
 
 @bot.message_handler(commands=['wallet', 'bal'])
@@ -597,7 +592,7 @@ def cmd_dice_rush(message):
         valid_choices = ["low", "high", "even", "odd"]
         amount, choice, err = parse_amount_and_choice(args, user_id, valid_choices)
         if err:
-            bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code> (Support 'all')")
+            bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/dr 100 low</code> ya <code>/dr low 100</code>")
             return
 
         USER_BALANCES[user_id] -= amount
@@ -626,49 +621,34 @@ def cmd_limbo(message):
         user_id = message.from_user.id
         args = message.text.split()[1:]
         if len(args) < 2:
-            bot.reply_to(message, "⚠️ Usage: <code>/limbo [amount/all] [target]</code>\nExample: <code>/limbo 100 2.0</code> ya <code>/limbo 2.0 all</code>")
+            bot.reply_to(message, "⚠️ Usage: <code>/limbo [amount] [target]</code>\nExample: <code>/limbo 100 2.0</code>")
+            return
+
+        try:
+            v1, v2 = float(args[0]), float(args[1])
+            if v1 < 10 and v2 >= 10:
+                target, amount = v1, v2
+            elif v2 < 10 and v1 >= 10:
+                target, amount = v2, v1
+            else:
+                amount, target = v1, v2
+        except ValueError:
+            bot.reply_to(message, "❌ Valid numbers enter karein!")
             return
 
         balance = get_balance(user_id)
-        val1, val2 = args[0].lower(), args[1].lower()
-        
-        amount, target = None, None
-        if val1 == "all":
-            amount = balance
-            try: target = float(val2)
-            except ValueError: pass
-        elif val2 == "all":
-            amount = balance
-            try: target = float(val1)
-            except ValueError: pass
-        else:
-            try:
-                v1, v2 = float(val1), float(val2)
-                if v1 < 10 and v2 >= 10:
-                    target, amount = v1, v2
-                elif v2 < 10 and v1 >= 10:
-                    target, amount = v2, v1
-                else:
-                    amount, target = v1, v2
-            except ValueError:
-                bot.reply_to(message, "❌ Valid numbers enter karein!")
-                return
-
-        if amount is None or target is None or target < 1.01 or target > 100.0:
-            bot.reply_to(message, "❌ <b>Invalid Target Multiplier!</b> Target <b>1.01x se 100.0x</b> ke beech hona chahiye.")
-            return
-
         if amount < MIN_BET:
             bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
             return
-
         if balance < amount or balance == 0:
             bot.reply_to(message, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai.")
+            return
+        if target < 1.01 or target > 100.0:
+            bot.reply_to(message, "❌ <b>Invalid Target Multiplier!</b> Target <b>1.01x se 100.0x</b> ke beech hona chahiye.")
             return
 
         USER_BALANCES[user_id] -= amount
 
-        # --- RIGGED LIMBO LOGIC ---
         if amount >= 100.0:
             if target > 1.01:
                 actual_multiplier = round(random.uniform(1.01, target - 0.01), 2)
@@ -747,9 +727,27 @@ def cmd_slots(message):
         user_id = message.from_user.id
         args = message.text.split()[1:]
 
-        amount, rounds, err = parse_amount_and_number(args, user_id, min_num=1, max_num=10)
-        if err:
-            bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/slots 100 3</code> ya <code>/slots 3 100</code> (Support 'all')")
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Usage: <code>/slots [amount] [rounds]</code>\nExample: <code>/slots 100 3</code>")
+            return
+
+        try:
+            v1, v2 = float(args[0]), float(args[1])
+            if v1 <= 10 and v2 > 10:
+                rounds, amount = int(v1), v2
+            elif v2 <= 10 and v1 > 10:
+                rounds, amount = int(v2), v1
+            else:
+                amount, rounds = v1, int(v2)
+        except ValueError:
+            bot.reply_to(message, "❌ Valid numbers enter karein!")
+            return
+
+        if amount < MIN_BET:
+            bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
+            return
+        if rounds < 1 or rounds > 10:
+            bot.reply_to(message, "❌ Rounds 1 se 10 ke beech hone chahiye!")
             return
 
         total_cost = amount * rounds
@@ -787,9 +785,34 @@ def create_pvp_challenge(message, game_type, emoji, min_val=1, max_val=6):
     user_id = message.from_user.id
     args = message.text.split()[1:]
 
-    amount, rounds, err = parse_amount_and_number(args, user_id, min_num=1, max_num=5)
-    if err:
-        bot.reply_to(message, f"{err}\n\n<b>Usage:</b> <code>/{game_type} [amount/all] [rounds]</code> (Rounds optional, default 1)")
+    if len(args) < 2:
+        bot.reply_to(message, f"⚠️ Usage: <code>/{game_type} [amount] [rounds]</code>\nExample: <code>/{game_type} 100 3</code>")
+        return
+
+    try:
+        v1, v2 = float(args[0]), float(args[1])
+        if v1 <= 5 and v2 > 5:
+            rounds, amount = int(v1), v2
+        elif v2 <= 5 and v1 > 5:
+            rounds, amount = int(v2), v1
+        else:
+            amount, rounds = v1, int(v2)
+    except ValueError:
+        bot.reply_to(message, "❌ Valid numbers enter karein!")
+        return
+
+    balance = get_balance(user_id)
+    if amount < MIN_BET:
+        bot.reply_to(message, f"❌ Minimum bet ₹{MIN_BET:.0f} hai!")
+        return
+    if amount > MAX_BET:
+        bot.reply_to(message, f"❌ Maximum bet ₹{MAX_BET:.0f} hai!")
+        return
+    if balance < amount or balance == 0:
+        bot.reply_to(message, "❌ <b>Insufficient Balance!</b> Wallet me paisa kam hai.")
+        return
+    if rounds < 1 or rounds > 5:
+        bot.reply_to(message, "❌ Rounds 1 se 5 ke beech hone chahiye!")
         return
 
     USER_BALANCES[user_id] -= amount
@@ -917,7 +940,6 @@ def handle_pvp_callbacks(call):
             time.sleep(1)
             if p2_is_bot:
                 max_val = 5 if match["emoji"] == "🏀" else 6
-                val = random.randint(1, max_val)
                 msg = bot.send_dice(call.message.chat.id, emoji=match["emoji"])
                 val = msg.dice.value
             else:
