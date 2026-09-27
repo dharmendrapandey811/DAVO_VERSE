@@ -15,16 +15,16 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAH0oWuBpYeASFtux8DSTNmLdblme673fKU"
+BOT_TOKEN = "8728557922:AAHDI1IM1mdG9CdEd7lxMBp6k12DoWxvtdY"
 ADMIN_ID = 7995159553
-UPI_ID = "Shudhanshu539@slc"
+UPI_ID = "molu.pandey@freecharge"
 BOT_NAME = "DAVO CASINO"
 
 MIN_BET = 10.0
 MAX_BET = 10000.0
 
 try:
-    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=3)
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=15)
     logging.info("Cleaned pending webhooks successfully.")
 except Exception as e:
     logging.warning(f"Failed to clear webhook: {e}")
