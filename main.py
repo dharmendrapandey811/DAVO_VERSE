@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAFDN6mXS22JpqcHXT8Z3yH1roux3fNDT7M"
+BOT_TOKEN = "8898027411:AAHKWLfmCalqFCxyALy8I57IVAWV6_p4T14"
 ADMIN_ID = 7995159553
 UPI_ID = "molu.pandey@freecharge"
 BOT_NAME = "DAVO CASINO"
@@ -1045,3 +1045,4 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=start_polling, daemon=True)
     bot_thread.start()
     run_web_server()
+
