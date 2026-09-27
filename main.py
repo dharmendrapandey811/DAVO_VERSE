@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAFzhQE5Irl1kThf0jUmilhQlH24NCXos1g"
+BOT_TOKEN = "8728557922:AAGU3H9XcvFns7_wzi_shCUPD81q0hB5IgU"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
