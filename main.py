@@ -792,7 +792,7 @@ def cmd_slots(message):
     except Exception as e: logging.error(f"Slots Error: {e}")
 
 # -------------------------------------------------------------
-# PVP & PVB NATURAL CHAT-BASED GAMES ENGINE (ROUND-WISE CHAT THROWS)
+# PVP & PVB NATURAL CHAT-BASED GAMES ENGINE
 # -------------------------------------------------------------
 def create_pvp_challenge(message, game_type, emoji):
     user_id = message.from_user.id
