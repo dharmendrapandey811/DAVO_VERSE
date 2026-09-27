@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8728557922:AAFlVRiM0THMLr7es_uLIM0PZUfJrBtTOGU"
+BOT_TOKEN = "8728557922:AAFzhQE5Irl1kThf0jUmilhQlH24NCXos1g"
 ADMIN_ID = 7995159553
 UPI_ID = "Shudhanshu539@slc"
 BOT_NAME = "DAVO CASINO"
@@ -37,7 +37,7 @@ USER_WAITING_STATE = {}
 PVP_MATCHES = {}
 ACTIVE_GAME_SESSIONS = {}
 ESCROW_DEALS = {}
-ACTIVE_GROUP_USERS = set() # Track active users for rain system
+ACTIVE_GROUP_USERS = set()
 
 BOT_ACTIVE = True
 
@@ -109,12 +109,11 @@ def parse_pvp_args(args, user_id):
 
     return amount, rounds, None
 
-# Track active group users automatically
 @bot.message_handler(func=lambda msg: True, content_types=['text', 'dice', 'photo', 'video', 'sticker'])
 def track_active_users(message):
     if message.chat.type in ['group', 'supergroup']:
         ACTIVE_GROUP_USERS.add(message.from_user.id)
-    return False # Pass to next handlers
+    return False
 
 # -------------------------------------------------------------
 # START, STOP & ADMIN COMMANDS
@@ -222,7 +221,6 @@ def cmd_rain(message):
             bot.reply_to(message, f"❌ <b>Insufficient Balance!</b> You have ₹{balance:.2f}, but you are trying to rain ₹{total_amount:.2f}.")
             return
 
-        # Eligible users (excluding sender if needed, or including active group users)
         eligible_users = list(ACTIVE_GROUP_USERS)
         if user_id in eligible_users:
             eligible_users.remove(user_id)
@@ -231,10 +229,8 @@ def cmd_rain(message):
             bot.reply_to(message, f"❌ Not enough active users in the group! Currently tracked active users: {len(eligible_users)}. Try a smaller member count.")
             return
 
-        # Deduct balance from sender
         USER_BALANCES[user_id] -= total_amount
 
-        # Select random members
         selected_users = random.sample(eligible_users, num_members)
         amount_per_user = total_amount / num_members
 
@@ -821,8 +817,8 @@ def create_pvp_challenge(message, game_type, emoji):
         "rounds": rounds,
         "p1_scores": [],
         "p2_scores": [],
-        "turn": "p1",  # p1 or p2
-        "mode": None   # bot or pvp
+        "turn": "p1",
+        "mode": None
     }
 
     markup = InlineKeyboardMarkup()
