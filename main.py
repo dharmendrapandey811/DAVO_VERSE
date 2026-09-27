@@ -6,6 +6,7 @@ import threading
 import logging
 import requests
 import io
+import html
 from PIL import Image, ImageDraw, ImageFont
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -15,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BOT_TOKEN = "8898027411:AAHKWLfmCalqFCxyALy8I57IVAWV6_p4T14"
+BOT_TOKEN = "8898027411:AAHkhKyqofBEvnmCwW6tMMsDK-8GBLBJRlU"
 ADMIN_ID = 7995159553
 UPI_ID = "molu.pandey@freecharge"
 BOT_NAME = "DAVO CASINO"
@@ -44,6 +45,9 @@ BOT_ACTIVE = True
 # -------------------------------------------------------------
 # DECORATORS & HELPERS
 # -------------------------------------------------------------
+def safe_name(name):
+    return html.escape(name if name else "User")
+
 def restricted_command(func):
     def wrapper(message, *args, **kwargs):
         user_id = message.from_user.id
@@ -123,7 +127,7 @@ def send_start(message):
     try:
         global BOT_ACTIVE
         user_id = message.from_user.id
-        user_name = message.from_user.full_name
+        user_name = safe_name(message.from_user.full_name)
 
         if user_id == ADMIN_ID:
             BOT_ACTIVE = True
@@ -239,14 +243,14 @@ def cmd_rain(message):
             USER_BALANCES[uid] = get_balance(uid) + amount_per_user
             try:
                 chat_member = bot.get_chat_member(message.chat.id, uid)
-                name = chat_member.user.first_name
+                name = safe_name(chat_member.user.first_name)
             except Exception:
                 name = f"User {uid}"
             winners_text.append(f"• {name}: <b>₹{amount_per_user:.2f}</b>")
 
         rain_report = (
             f"🌧️ <b>MONEY RAIN EVENT!</b> 🌧️\n\n"
-            f"👤 <b>Rain By:</b> {message.from_user.first_name}\n"
+            f"👤 <b>Rain By:</b> {safe_name(message.from_user.first_name)}\n"
             f"💰 <b>Total Rain:</b> ₹{total_amount:.2f}\n"
             f"👥 <b>Distributed To:</b> {num_members} random members\n"
             f"💸 <b>Per Person:</b> ₹{amount_per_user:.2f}\n\n"
@@ -273,7 +277,7 @@ def send_bot_fund(message):
     )
 
 # -------------------------------------------------------------
-# DEPOSIT & WITHDRAWAL SYSTEM (PRIVATE CHAT RESTRICTED)
+# DEPOSIT & WITHDRAWAL SYSTEM
 # -------------------------------------------------------------
 @bot.message_handler(commands=['deposit'])
 @restricted_command
@@ -355,7 +359,7 @@ def handle_deposit_screenshot(message):
             return
 
         file_id = message.photo[-1].file_id
-        user_name = message.from_user.full_name
+        user_name = safe_name(message.from_user.full_name)
         username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
 
         caption_text = (
@@ -394,7 +398,7 @@ def cmd_escrow(message):
         amount = float(args[1])
         sender_id = message.from_user.id
         receiver_id = message.reply_to_message.from_user.id
-        receiver_name = message.reply_to_message.from_user.first_name
+        receiver_name = safe_name(message.reply_to_message.from_user.first_name)
 
         if sender_id == receiver_id:
             bot.reply_to(message, "❌ You cannot do escrow with yourself!")
@@ -420,7 +424,7 @@ def cmd_escrow(message):
         bot.reply_to(
             message,
             f"🤝 <b>ESCROW CREATED!</b>\n\n"
-            f"👤 From: {message.from_user.first_name}\n"
+            f"👤 From: {safe_name(message.from_user.first_name)}\n"
             f"👤 To: {receiver_name}\n"
             f"💰 Amount: ₹{amount:.2f}\n\n"
             f"<i>Funds are on hold. Click Release or Refund once work is completed.</i>",
@@ -471,7 +475,7 @@ def cmd_tip(message):
         amount = float(args[1])
         sender_id = message.from_user.id
         receiver_id = message.reply_to_message.from_user.id
-        receiver_name = message.reply_to_message.from_user.first_name
+        receiver_name = safe_name(message.reply_to_message.from_user.first_name)
 
         if sender_id == receiver_id:
             bot.reply_to(message, "❌ You cannot tip yourself!")
@@ -486,7 +490,7 @@ def cmd_tip(message):
         bot.reply_to(
             message,
             f"🎁 <b>TIP SUCCESSFUL!</b>\n\n"
-            f"👤 From: {message.from_user.first_name}\n"
+            f"👤 From: {safe_name(message.from_user.first_name)}\n"
             f"👤 To: {receiver_name}\n"
             f"💰 Amount: <b>₹{amount:.2f}</b> sent!"
         )
@@ -543,7 +547,7 @@ def handle_text_inputs(message):
             
             bot.reply_to(message, f"📤 <b>Withdrawal Request Placed!</b>\n💰 Amount: ₹{amount:.2f}\n💳 UPI: <code>{upi}</code>\n\nAdmin will send payment soon.")
             
-            user_name = message.from_user.full_name
+            user_name = safe_name(message.from_user.full_name)
             username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
             
             admin_msg = (
@@ -756,7 +760,7 @@ def cmd_limbo(message):
 
         caption_text = (
             f"🚀 <b>DAVO CASINO - LIMBO</b> 🚀\n\n"
-            f"👤 Player: {message.from_user.first_name}\n"
+            f"👤 Player: {safe_name(message.from_user.first_name)}\n"
             f"💸 Bet: <b>₹{amount:.2f}</b> | Target: <b>{target}x</b>\n"
             f"📊 Multiplier: <b>{actual_multiplier}x</b>\n"
             f"{'🎉 <b>WON! Payout: ₹' + f'{payout:.2f}</b>' if win else '💥 <b>CRASHED! Lost: ₹' + f'{amount:.2f}</b>'}\n\n"
@@ -792,7 +796,7 @@ def cmd_slots(message):
     except Exception as e: logging.error(f"Slots Error: {e}")
 
 # -------------------------------------------------------------
-# PVP & PVB NATURAL CHAT-BASED GAMES ENGINE
+# PVP & PVB GAMES ENGINE
 # -------------------------------------------------------------
 def create_pvp_challenge(message, game_type, emoji):
     user_id = message.from_user.id
@@ -810,7 +814,7 @@ def create_pvp_challenge(message, game_type, emoji):
         "game": game_type,
         "emoji": emoji,
         "p1_id": user_id,
-        "p1_name": message.from_user.first_name,
+        "p1_name": safe_name(message.from_user.first_name),
         "p2_id": None,
         "p2_name": None,
         "amount": amount,
@@ -831,7 +835,7 @@ def create_pvp_challenge(message, game_type, emoji):
     bot.reply_to(
         message,
         f"⚔️ <b>{game_type.upper()} MATCH!</b> {emoji}\n\n"
-        f"👤 <b>Challenger:</b> {message.from_user.first_name}\n"
+        f"👤 <b>Challenger:</b> {safe_name(message.from_user.first_name)}\n"
         f"🔄 <b>Rounds:</b> {rounds} | 💰 <b>Bet:</b> ₹{amount:.2f}\n\n"
         f"<i>Click below to accept or play with Bot.</i>",
         reply_markup=markup
@@ -911,7 +915,7 @@ def handle_pvp_callbacks(call):
             
             USER_BALANCES[user_id] -= match["amount"]
             match["p2_id"] = user_id
-            match["p2_name"] = call.from_user.first_name
+            match["p2_name"] = safe_name(call.from_user.first_name)
             match["mode"] = "pvp"
 
             ACTIVE_GAME_SESSIONS[match["p1_id"]] = match_id
@@ -1045,4 +1049,3 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=start_polling, daemon=True)
     bot_thread.start()
     run_web_server()
-
